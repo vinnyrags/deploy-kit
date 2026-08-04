@@ -1,0 +1,47 @@
+# deploy-kit — per-site nginx vhost template (WordPress). Templated faithfully from
+# the View reference box. Placeholders: {{SERVER_NAMES}} {{WEBROOT}} {{PHP_VER}}
+# {{CACHE_ZONE}} {{SITE}}. This is the port-80 server; run certbot afterwards to add
+# the 443 block + http->https redirect (it edits this file in place, "managed by
+# Certbot", exactly as on the existing boxes).
+#
+# {{SITE}} is the per-site suffix for the skip-cache maps (e.g. avftb) defined in
+# conf.d/wp-fastcgi-cache.conf. {{CACHE_ZONE}} is that site+env's keys_zone (e.g. AVFTB).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{SERVER_NAMES}};
+    root {{WEBROOT}};
+    index index.php index.html;
+
+    location ^~ /.well-known/acme-challenge/ { allow all; default_type "text/plain"; }
+
+    set $skip_cache 0;
+    if ($no_cache_method_{{SITE}}) { set $skip_cache 1; }
+    if ($no_cache_uri_{{SITE}})    { set $skip_cache 1; }
+    if ($no_cache_cookie_{{SITE}}) { set $skip_cache 1; }
+
+    gzip on; gzip_vary on; gzip_proxied any; gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss image/svg+xml;
+
+    location ~* \.(jpg|jpeg|png|webp|svg|gif|ico|css|js|woff|woff2|ttf|eot)$ { expires 1y; add_header Cache-Control "public, immutable"; access_log off; }
+    location ~ /\. { deny all; access_log off; log_not_found off; }
+    location = /xmlrpc.php { deny all; access_log off; log_not_found off; }
+    location ~* /(?:uploads|files)/.*\.php$ { deny all; }
+    location / { try_files $uri $uri/ /index.php?$args; }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php{{PHP_VER}}-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_buffer_size 32k; fastcgi_buffers 16 16k; fastcgi_busy_buffers_size 64k;
+        fastcgi_cache_bypass $skip_cache; fastcgi_no_cache $skip_cache;
+        fastcgi_cache {{CACHE_ZONE}};
+        fastcgi_cache_valid 200 30s;   # micro-cache; NEVER 301/302
+        fastcgi_cache_valid 404 5m;
+        add_header X-FastCGI-Cache $upstream_cache_status;
+    }
+}

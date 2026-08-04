@@ -22,8 +22,14 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    - `classic` — no build, just a theme checkout (e.g. Shucked)
    - `nextjs` — `npm ci` + build + PM2/systemd restart (e.g. itzenzo.tv)
 
-3. **nginx cache snippets** (`nginx/`) — the canonical WP FastCGI micro-cache (200+404
-   only, never 301/302) and the standard `$skip_cache` rules.
+3. **nginx templates** (`nginx/`) — the canonical WP FastCGI micro-cache (200+404 only,
+   never 301/302) as an http-context include + a per-site vhost template.
+
+4. **Droplet provisioning** (`provision/`, `bin/`) — bring a fresh droplet to the
+   canonical spec (`provision-base.sh`), stand up a site's infra (`new-site.sh`:
+   DBs + web roots + bare repo + vhosts + cache + wp-config-env), and one-command
+   GitHub wiring (`bin/onboard.sh`: deploy key + secrets + caller workflow). See
+   **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end lifecycle.
 
 ## Consume it (per site)
 

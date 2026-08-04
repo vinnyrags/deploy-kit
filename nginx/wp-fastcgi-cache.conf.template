@@ -1,0 +1,16 @@
+# deploy-kit — http-context WordPress FastCGI cache config. Install/append at
+# /etc/nginx/conf.d/wp-fastcgi-cache.conf. One block per site: the skip maps
+# (per-site suffix {{SITE}}) + the cache zones (prod + staging). Templated from the
+# View reference box. new-site.sh appends a rendered copy of this per site.
+#
+# Placeholders: {{SITE}} (map suffix, e.g. avftb) · {{ZONE}} (keys_zone, e.g. AVFTB)
+#               {{ZONE_DIR}} (cache dir basename, e.g. fastcgi-avftb)
+
+# --- skip-cache maps (per site) ---
+map $request_method $no_cache_method_{{SITE}} { default 0; POST 1; PUT 1; DELETE 1; }
+map $request_uri    $no_cache_uri_{{SITE}}    { default 0; ~*/wp-admin/ 1; ~*/wp-.*\.php 1; ~*/feed/ 1; ~*/sitemap.*\.xml 1; ~*\?(.+)$ 1; }
+map $http_cookie    $no_cache_cookie_{{SITE}} { default 0; ~*comment_author 1; ~*wordpress_logged_in 1; ~*wp-postpass 1; }
+
+# --- cache zones (prod + staging) ---
+fastcgi_cache_path /var/cache/nginx/{{ZONE_DIR}}         levels=1:2 keys_zone={{ZONE}}:50m         inactive=60m max_size=500m use_temp_path=off;
+fastcgi_cache_path /var/cache/nginx/{{ZONE_DIR}}-staging levels=1:2 keys_zone={{ZONE}}_STAGING:50m inactive=60m max_size=500m use_temp_path=off;
