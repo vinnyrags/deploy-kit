@@ -1,0 +1,19 @@
+#!/bin/bash
+# deploy-kit post-receive stub — installed into each bare repo's hooks/ on the
+# droplet by provision/setup-droplet.sh. Stays thin: it just loads node and hands
+# each pushed ref to the versioned deploy-kit, driven by this site's config.
+#
+# The provisioner fills in SITE_CONF below. DEPLOY_KIT_DIR points at a checked-out,
+# version-pinned copy of this repo on the droplet (default /opt/deploy-kit).
+set -euo pipefail
+
+export NVM_DIR="/root/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+DEPLOY_KIT_DIR="${DEPLOY_KIT_DIR:-/opt/deploy-kit}"
+SITE_CONF="__SITE_CONF__"
+
+while read -r oldrev newrev refname; do
+  branch="$(git rev-parse --symbolic --abbrev-ref "$refname")"
+  GIT_DIR="$PWD" "$DEPLOY_KIT_DIR/deploy/deploy.sh" "$branch" "$SITE_CONF" "$newrev" "$oldrev"
+done

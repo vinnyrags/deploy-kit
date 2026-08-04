@@ -1,0 +1,53 @@
+name: Deploy (reusable)
+
+# Reusable deploy workflow — the delivery layer for any git-push-to-droplet site,
+# regardless of stack (Mythus/IX, classic WP theme, Next.js…). It only moves a ref
+# to a droplet's bare repo over SSH; the droplet's post-receive hook does the
+# stack-specific build + cache flush (see deploy/ + profiles/). Callers stay a few
+# lines; change deploy logic here, once, for everyone.
+#
+# Consumed like:
+#   jobs:
+#     deploy:
+#       uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v1
+#       with:  { bare_repo: aviewfromthebridge.git }
+#       secrets: inherit   # DEPLOY_SSH_KEY / DROPLET_HOST / DROPLET_KNOWN_HOSTS
+on:
+  workflow_call:
+    inputs:
+      bare_repo:
+        description: "Bare repo basename on the droplet under /var/repo (e.g. aviewfromthebridge.git)"
+        required: true
+        type: string
+      repo_root:
+        description: "Directory holding the bare repos on the droplet."
+        required: false
+        default: /var/repo
+        type: string
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: true
+      DROPLET_HOST:
+        required: true
+      DROPLET_KNOWN_HOSTS:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DROPLET_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Deploy to droplet (post-receive builds + flushes cache)
+        run: |
+          git remote add droplet "root@${{ secrets.DROPLET_HOST }}:${{ inputs.repo_root }}/${{ inputs.bare_repo }}"
+          git push droplet "HEAD:refs/heads/${{ github.ref_name }}"

@@ -1,0 +1,53 @@
+# deploy-kit — per-site config. One file per site on the droplet, e.g.
+#   /etc/deploy-kit/aviewfromthebridge.conf
+# Sourced by deploy.sh. Pick a PROFILE and fill the maps for that stack.
+# (bash associative arrays — Ubuntu 24.04 bash 5 is fine.)
+
+# ============================================================================
+# EXAMPLE A — Mythus/IX WordPress site (View / Matchbook / Celeb Auto /
+#             vincentragosta.io / ellenharvey)
+# ============================================================================
+PROFILE=mythus-ix
+THEME=aviewfromthebridge          # child theme directory name
+PHP_VER=8.4                       # 8.4 (View/MBF), 8.3 (CA), etc.
+FPM_ACTION=restart                # restart (drops OPcache hard) | reload
+REDIS=0                           # 1 if a persistent object cache is enabled
+
+declare -A DEPLOY_DIR=(
+  [main]=/var/www/viewfromthebridgeplay.com/public
+  [develop]=/var/www/avftb-staging/public
+)
+declare -A ENV_NAME=(
+  [main]=production
+  [develop]=staging
+)
+declare -A CACHE_DIR=(
+  [main]=/var/cache/nginx/fastcgi-avftb
+  [develop]=/var/cache/nginx/fastcgi-avftb-staging
+)
+
+# ============================================================================
+# EXAMPLE B — Classic WP theme, no build (Shucked). DEPLOY_DIR points at the
+#             THEME dir; site is uncached + opcache validate_timestamps On.
+# ----------------------------------------------------------------------------
+# PROFILE=classic
+# declare -A DEPLOY_DIR=(
+#   [main]=/var/www/shuckedmusical.com/public/wp-content/themes/shucked
+#   [develop]=/var/www/staging.shuckedmusical.com/public/wp-content/themes/shucked
+# )
+# # If/when Shucked gains a FastCGI cache or turns validate_timestamps off:
+# # PHP_VER=8.2 ; FPM_RELOAD=1 ; REDIS=1
+# # declare -A CACHE_DIR=( [main]=/var/cache/nginx/... )
+
+# ============================================================================
+# EXAMPLE C — Next.js app (itzenzo.tv). DEPLOY_DIR is the app dir; restart via
+#             PM2 or systemd; OWNER is the app's run user.
+# ----------------------------------------------------------------------------
+# PROFILE=nextjs
+# OWNER=deploy:deploy
+# PM2_APP=itzenzo                 # or: SYSTEMD_UNIT=itzenzo.service
+# declare -A DEPLOY_DIR=(
+#   [main]=/var/www/itzenzo.tv/current
+#   [develop]=/var/www/itzenzo-staging/current
+# )
+# declare -A ENV_NAME=( [main]=production [develop]=staging )
