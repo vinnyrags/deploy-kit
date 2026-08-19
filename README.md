@@ -66,7 +66,7 @@ works if the kit is ever unavailable.
 |---|---|---|---|
 | View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache |
 | vincentragosta.io, ellenharvey | `mythus-ix` | 8.4 | same recipe |
-| Shucked | `classic` | 8.2 | no build, uncached |
+| Shucked | `classic` | 8.2 | no build; FastCGI micro-cache added 2026-08-19 |
 | itzenzo.tv | `nextjs` | — | PM2/systemd |
 
 ## License

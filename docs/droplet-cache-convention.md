@@ -13,7 +13,29 @@ same origin protection as long-TTL+purge exactly when traffic warrants it, witho
 purge plugin, purge-coverage risk, or cached redirects).
 
 New droplets/sites should be provisioned from this. Live sites already matching:
-**MF, AVFTB, CBA** (all 30s microcache, no nginx-helper, no idle Redis).
+**MF, AVFTB, CBA, Shucked** (all 30s microcache, no nginx-helper, no idle Redis).
+Shucked joined 2026-08-19 — the vhosts there are hand-written and certbot-managed, so
+the directives were inserted into the existing files rather than rendered from
+`nginx/vhost.conf.template`.
+
+## Known gaps in this convention (verified 2026-08-19)
+
+Three things the rules above imply but the fleet does not actually do. None is
+harmful; they're recorded so the doc isn't read as describing behavior that exists.
+
+- **`fastcgi_cache_valid 404 5m` is inert.** WordPress emits `Cache-Control: no-cache`
+  on 404s and nginx honors it, so 404s are re-generated every time. Confirmed on both
+  MBF and Shucked. Caching them would need `fastcgi_ignore_headers Cache-Control
+  Expires;`, which would also change 200 behaviour — so this is left alone deliberately.
+- **404s never show `X-FastCGI-Cache`.** nginx's `add_header` only applies to a fixed
+  success/redirect status list unless `always` is appended. So a missing header on a
+  404 is expected and is *not* evidence of a misconfiguration.
+- **`fastcgi_cache_key` is droplet-level, not per-site.** File 1 below lists it, but
+  `nginx/wp-fastcgi-cache.conf.template` (which `new-site.sh` *appends* once per site)
+  omits it — correctly, since a second copy in the same context is a duplicate-directive
+  error. On every live box it sits in `nginx.conf`'s `http` block. A droplet provisioned
+  without it will fail `nginx -t` the moment a vhost sets `fastcgi_cache`; see
+  `provision/provision-base.sh`.
 
 ## The convention (rules)
 
