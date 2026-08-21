@@ -60,6 +60,15 @@ so an update to this repo is a **deliberate roll** (`checkout` a new tag), never
 instant fleet-wide change. Break-glass: the backup hook (or `git push droplet`) still
 works if the kit is ever unavailable.
 
+## Docs
+
+| Doc | Covers |
+|---|---|
+| [docs/new-site-runbook.md](docs/new-site-runbook.md) | End-to-end lifecycle for standing up a new site |
+| [docs/droplet-cache-convention.md](docs/droplet-cache-convention.md) | The canonical FastCGI micro-cache, plus the `sites-enabled` drift trap |
+| [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), and the Cloudflare-IP logging gap |
+| [docs/nginx-5xx-triage-runbook.md](docs/nginx-5xx-triage-runbook.md) | Triaging origin 5xx |
+
 ## Fleet (reference)
 
 | Site | Profile | PHP | Notes |

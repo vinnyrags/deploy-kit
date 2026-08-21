@@ -37,6 +37,29 @@ harmful; they're recorded so the doc isn't read as describing behavior that exis
   without it will fail `nginx -t` the moment a vhost sets `fastcgi_cache`; see
   `provision/provision-base.sh`.
 
+## Trap — `sites-enabled/` is the live copy, `sites-available/` is stale
+
+On the **AVFTB and MBF droplets**, the files in `/etc/nginx/sites-enabled/` are **real
+files, not symlinks**, and they have drifted from the same-named files in
+`sites-available/`. Verified 2026-08-20: on both boxes the enabled copy is the newer,
+correct one and the `sites-available` copy is an older revision **missing the entire
+FastCGI cache block**.
+
+Consequences, both easy to hit:
+
+- Editing `sites-available/<domain>` changes nothing. `nginx.conf` includes only
+  `sites-enabled/*`.
+- "Restoring" a vhost from `sites-available` silently removes page caching. The site keeps
+  serving 200s, so nothing looks broken — traffic just stops being cached.
+
+**Always edit `sites-enabled/<domain>` directly on these boxes, and diff the two before
+trusting either.** Both boxes also carry `*.bak-<epoch>` copies in `sites-available/`;
+those are inert (nginx does not glob that directory) but at least one — AVFTB's
+`avftb-staging.bak-1783962026` — still contains the old `fastcgi_cache_valid 200 301 302
+30m`, i.e. the cached-redirect footgun. Never promote a `.bak` into `sites-enabled/`.
+
+Sites provisioned fresh by `new-site.sh` get a proper symlink and are not affected.
+
 ## The convention (rules)
 
 - **30s FastCGI microcache.** `fastcgi_cache_valid 200 30s;` `404 5m;` — TTL is the
