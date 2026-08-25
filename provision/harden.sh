@@ -114,15 +114,31 @@ log "wp-security.conf installed"
 cp "$KIT/nginx/wp-hardening.snippet.conf" /etc/nginx/snippets/wp-hardening.conf
 log "wp-hardening snippet installed"
 
+# Iterate sites-ENABLED, not sites-available, and resolve to the file nginx actually
+# loads. This is load-bearing: on three of the four ARTHOUSE droplets, sites-enabled
+# holds REAL FILES rather than symlinks, and they have drifted from their
+# sites-available namesakes (CBA production by 2 lines, its staging by 22). Patching
+# sites-available there would edit a file nginx never reads, report success, and change
+# nothing — a silent no-op. Only Shucked uses symlinks, which is why an earlier version
+# of this script appeared to work.
+#
+# readlink -f resolves a symlink to its target and returns a real path unchanged, so
+# this handles both layouts.
+: > "$BACKUP/manifest.txt"
 patched=0
-for v in /etc/nginx/sites-available/*; do
-  [ -e "$v" ] || continue
-  base="$(basename "$v")"
+for link in /etc/nginx/sites-enabled/*; do
+  [ -e "$link" ] || continue
+  base="$(basename "$link")"
   case "$base" in 000-drop-default) continue ;; esac
   [ -n "$ONLY" ] && [ "$base" != "$ONLY" ] && continue
+
+  v="$(readlink -f "$link")"
+  [ -f "$v" ] || { log "SKIP $base — cannot resolve to a real file"; continue; }
+
   grep -q "wp-hardening.conf" "$v" && { log "already patched: $base"; continue; }
 
   cp "$v" "$BACKUP/$base"
+  printf '%s\t%s\n' "$base" "$v" >> "$BACKUP/manifest.txt"
   # Insert the include immediately after every `server {` opening line. It must precede
   # the generic `location ~ \.php$` — nginx matches regex locations in order of
   # appearance, so first-in-file wins.
@@ -146,14 +162,17 @@ if nginx -t 2>&1; then
   log "OK — nginx reloaded. Backups kept at $BACKUP"
 else
   log "nginx -t FAILED — rolling back"
-  for f in "$BACKUP"/*; do
-    [ -e "$f" ] || continue
-    b="$(basename "$f")"
-    case "$b" in
-      00-cloudflare-realip.conf|wp-security.conf) cp "$f" "/etc/nginx/conf.d/$b" ;;
-      *) cp "$f" "/etc/nginx/sites-available/$b" ;;
-    esac
+  # conf.d files restore to a fixed location; vhosts restore to wherever they actually
+  # came from, which manifest.txt recorded. Restoring them to sites-available would
+  # leave the live sites-enabled copies broken on the boxes that use real files.
+  for b in 00-cloudflare-realip.conf wp-security.conf; do
+    [ -f "$BACKUP/$b" ] && cp "$BACKUP/$b" "/etc/nginx/conf.d/$b"
   done
+  if [ -f "$BACKUP/manifest.txt" ]; then
+    while IFS=$'\t' read -r b path; do
+      [ -n "$b" ] && [ -f "$BACKUP/$b" ] && cp "$BACKUP/$b" "$path"
+    done < "$BACKUP/manifest.txt"
+  fi
   # Files this run created rather than replaced won't be in the backup dir; remove them.
   [ -f "$BACKUP/wp-security.conf" ] || rm -f /etc/nginx/conf.d/wp-security.conf
   [ -f "$BACKUP/00-cloudflare-realip.conf" ] || rm -f /etc/nginx/conf.d/00-cloudflare-realip.conf
