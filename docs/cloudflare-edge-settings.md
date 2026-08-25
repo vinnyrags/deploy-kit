@@ -82,13 +82,45 @@ see whether Cloudflare flipped it back.
 
 Zone ids: AVFTB `cb38a7eae662d5981a5fa7b814917eb8` · MBF `3bb7322443a62e2b5ead8f4a06f4d3f1`.
 
-## Origin visibility gap — `set_real_ip_from` is not configured
+## Origin visibility gap — CLOSED 2026-08-25
 
-Neither the AVFTB nor the MBF droplet restores the visitor IP from Cloudflare, so
-`/var/log/nginx/access.log` records **Cloudflare edge IPs** (`104.23.x`, `172.70.x`,
-`162.158.x`) for every request. You cannot trace a specific reporter's requests, which
-actively slows down incident triage.
+**Was:** neither the AVFTB nor the MBF droplet restored the visitor IP, so
+`/var/log/nginx/access.log` recorded **Cloudflare edge IPs** (`104.23.x`, `172.70.x`,
+`162.158.x`) for every request, and you could not trace a reporter during triage.
 
-Fix is the standard `set_real_ip_from` block for Cloudflare's published ranges plus
-`real_ip_header CF-Connecting-IP;`. Not yet done on any box — do it before the next
-incident rather than during one.
+**Now:** `provision/harden.sh` installs `/etc/nginx/conf.d/00-cloudflare-realip.conf` —
+Cloudflare's published ranges as `set_real_ip_from`, plus `real_ip_header CF-Connecting-IP`
+and `real_ip_recursive on`. Applied to the AVFTB and MBF droplets on 2026-08-25 and verified
+on both: a proxied request and a direct one each logged the real client IP, where older
+entries in the same file show edge IPs.
+
+The ranges are **fetched live, not hardcoded**, because Cloudflare changes them. Re-running
+`harden.sh` is the refresh mechanism. If the fetch fails the script keeps whatever is already
+installed rather than writing a truncated list — a short trust list silently stops restoring
+real IPs for the ranges it drops, which fails *open* and looks like nothing is wrong.
+
+Safe on non-proxied vhosts too: nginx only honours `CF-Connecting-IP` from an address already
+in the trust list, so a direct client cannot spoof its way past it.
+
+This also matters for rate limiting, not just logs. Without real-IP, `limit_req` on a proxied
+site keys on the edge IP and buckets every visitor into ~20 shared keys — throttling real users
+while barely inconveniencing an attacker. That is why `harden.sh` installs both in one run and
+why they must not be split. See [security-hardening.md](security-hardening.md).
+
+## Origin bypass — still open
+
+Both droplets answer on their raw IP, so Cloudflare can be skipped entirely:
+
+```bash
+curl -k -H 'Host: matchbookfestival.com' https://161.35.53.192/    # returns the full site
+```
+
+A `default_server` block does **not** prevent this — it only catches requests with an *unknown*
+Host header. Origin IPs are not secret; Certificate Transparency logs expose them.
+
+What this does and does not mean: the nginx hardening still applies on a direct hit, because it
+sits below Cloudflare. What is bypassed is the edge layer — WAF, bot rules, and any Cloudflare
+protections. Closing it means restricting 80/443 to Cloudflare's ranges via ufw or an nginx
+`allow`/`deny all`. That is deliberately **not** done: it is a one-way door if the ranges drift
+or an uptime monitor hits the origin directly, and it should be a considered decision rather
+than a side effect of a hardening run.
