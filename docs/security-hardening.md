@@ -103,6 +103,35 @@ than the whole vhost. Cache-bust it, or a FastCGI hit will tell you nothing.
 When hardening staging on a shared droplet, run the same burst against **production** afterwards
 and confirm zero 429s. That is the only real proof `--only` was honoured.
 
+## Two things that look like regressions and are not
+
+Both of these were investigated as incidents during the 2026-08-25 sweep and both were false.
+
+**A staging sitemap returning 404 is usually correct.** `blog_public=0` makes core disable sitemaps
+entirely (`wp_sitemaps_get_server()->sitemaps_enabled()` returns false), so `/wp-sitemap.xml` falls
+through to the theme's 404 template and returns `content-type: text/html`. That is the intended
+state for a `noindex` staging site.
+
+Do not confuse it with the genuine bug fixed on Shucked, which looks different: **valid sitemap XML
+served with a 404 status**, caused by `WP::handle_404()` firing on a site with zero published posts
+and a static front page. Check `blog_public` first — if it is `0`, there is nothing to fix.
+
+**Cloudflare injects a managed robots.txt on proxied zones.** It adds a block disallowing AI
+crawlers — GPTBot, ClaudeBot, CCBot, Amazonbot, Bytespider, Google-Extended, meta-externalagent and
+others — while giving `User-agent: *` an explicit `Allow: /`.
+
+A grep for `Disallow: /` that ignores which user-agent block it sits in reads this as "the site has
+been deindexed". It has not been; Googlebot and Bingbot are unaffected. Parse by block:
+
+```bash
+curl -s https://<site>/robots.txt | awk '
+  /^User-agent:/ { ua = tolower($2) }
+  /^Disallow: \/$/ { if (ua == "*" || ua == "googlebot") print "BLOCKED for " ua }'
+```
+
+The block appears only on proxied zones, so it is also a quick way to tell whether a site is behind
+Cloudflare at all.
+
 ## The WordPress half
 
 nginx cannot close username enumeration — that is application-level. IX **v1.7.0**'s
