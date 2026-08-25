@@ -9,12 +9,23 @@
 # The one thing that genuinely needs a server-context location — blocking xmlrpc.php —
 # lives in snippets/wp-hardening.conf and is included per-vhost by harden.sh.
 
-# --- login rate limiting -----------------------------------------------------------
+# --- login rate limiting: zone definition only ---------------------------------------
 #
-# The key is produced by a map rather than being $binary_remote_addr directly. nginx
-# does not count a request whose limit key evaluates to empty, so this lets a single
-# http-context `limit_req` apply to wp-login.php ONLY, and leaves every other request
-# completely untouched. That is what avoids per-vhost edits.
+# This file DEFINES the zone. It does not APPLY it — `limit_req` lives in
+# snippets/wp-hardening.conf, which is included per-vhost.
+#
+# That split is deliberate and was learned the hard way. The first version put
+# `limit_req` here in http context, reasoning that it needed no vhost edits. But http
+# context means box-wide: applying it to one vhost applied it to every site on the
+# droplet, so `harden.sh --only <staging vhost>` silently rate-limited production too.
+# `limit_req` is valid in server context, so moving it into the snippet makes --only
+# mean what it says. The vhost is being edited for the xmlrpc rule regardless, so the
+# split costs nothing.
+#
+# The key comes from a map rather than $binary_remote_addr directly: nginx does not
+# count a request whose limit key evaluates to empty, so the limit applies to
+# wp-login.php ONLY and every other request is untouched. Verified — the homepage
+# never 429s under a burst that throttles the login form.
 #
 # Both paths are matched: /wp-login.php (classic layout, e.g. Shucked) and
 # /wp/wp-login.php (Bedrock-style layout where core lives in /wp — AVFTB, CBA,
@@ -26,13 +37,23 @@ map $request_uri $wp_login_limit_key {
     ~^/wp/wp-login\.php           $binary_remote_addr;
 }
 
-# 20 requests/minute/IP with a burst of 5. A human logging in never approaches this.
-# Sized to blunt brute force, NOT to stop it — an attacker with valid credentials is
-# unaffected by rate limiting, which is why 2FA is the actual control. This is depth.
-limit_req_zone $wp_login_limit_key zone=wp_login:10m rate=20r/m;
-limit_req      zone=wp_login burst=5 nodelay;
-limit_req_status 429;
+# 30 requests/minute/IP, burst 10.
+#
+# Deliberately more generous than the 20r/m + burst 5 first tried. These agencies sit
+# behind a single office NAT, so several people logging in within a minute share one
+# bucket — measured on Shucked staging, 20/5 started throttling around the 9th request
+# in ten seconds, which is close enough to real usage to risk locking out a colleague.
+#
+# Loosening costs almost nothing defensively. The CBA intruder came from ~25 rotating
+# IPs, so per-IP limiting never stops a distributed attack; what it stops is single-IP
+# hammering, and Shucked's 21,793 attempts are exactly that. At 30r/m one IP manages
+# ~1,800/hour instead of tens of thousands.
+#
+# Sized to blunt brute force, NOT to stop it. An attacker with valid credentials is
+# unaffected — 2FA is the actual control. This is depth.
+limit_req_zone $wp_login_limit_key zone=wp_login:10m rate=30r/m;
 
-# Brute-force attempts should be greppable. Without this they are indistinguishable
-# from ordinary 429s in the access log.
+# Throttles are visible in the access log as 429s on wp-login.php. Note they do NOT
+# reliably reach error.log even with this set, so grep the access log when
+# investigating a brute-force run.
 limit_req_log_level warn;
