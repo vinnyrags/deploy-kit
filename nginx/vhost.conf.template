@@ -16,6 +16,10 @@ server {
 
     location ^~ /.well-known/acme-challenge/ { allow all; default_type "text/plain"; }
 
+    # Must precede `location ~ \.php$` below — nginx matches regex locations in order
+    # of appearance. Installed by provision/harden.sh, which provision-base.sh runs.
+    include snippets/wp-hardening.conf;
+
     set $skip_cache 0;
     if ($no_cache_method_{{SITE}}) { set $skip_cache 1; }
     if ($no_cache_uri_{{SITE}})    { set $skip_cache 1; }
@@ -26,7 +30,9 @@ server {
 
     location ~* \.(jpg|jpeg|png|webp|svg|gif|ico|css|js|woff|woff2|ttf|eot)$ { expires 1y; add_header Cache-Control "public, immutable"; access_log off; }
     location ~ /\. { deny all; access_log off; log_not_found off; }
-    location = /xmlrpc.php { deny all; access_log off; log_not_found off; }
+    # xmlrpc is blocked by snippets/wp-hardening.conf, included above. It used to be an
+    # exact `location = /xmlrpc.php` here, which silently missed /wp/xmlrpc.php on the
+    # Bedrock-style layout — so it was open on every Mythus site while looking correct.
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     location / { try_files $uri $uri/ /index.php?$args; }
 

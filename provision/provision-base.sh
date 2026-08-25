@@ -57,5 +57,10 @@ log "deploy-kit @ /opt/deploy-kit (pinned ${DEPLOY_KIT_REF:-main})"
 git -C /opt/deploy-kit fetch -q --tags origin
 git -C /opt/deploy-kit checkout -q "${DEPLOY_KIT_REF:-main}"
 
+log "wordpress hardening (cloudflare real-ip, wp-login rate limit, xmlrpc block)"
+# Single source of truth — harden.sh is also the path for already-provisioned boxes,
+# and re-running it is how the Cloudflare ranges get refreshed.
+bash /opt/deploy-kit/provision/harden.sh
+
 nginx -t && systemctl reload nginx
 log "BASE DONE (php ${PHP_VER}). NEXT: run 'mysql_secure_installation', then new-site.sh per site."

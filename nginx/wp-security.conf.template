@@ -1,0 +1,38 @@
+# deploy-kit — http-context WordPress hardening. Installed to
+# /etc/nginx/conf.d/wp-security.conf by provision/harden.sh.
+#
+# Everything here is http-context on purpose: it applies to every vhost on the box
+# without editing any of them. The live vhosts have been edited in place by certbot
+# (the 443 block), so regenerating them from vhost.conf.template would destroy the
+# TLS config. Do not do that.
+#
+# The one thing that genuinely needs a server-context location — blocking xmlrpc.php —
+# lives in snippets/wp-hardening.conf and is included per-vhost by harden.sh.
+
+# --- login rate limiting -----------------------------------------------------------
+#
+# The key is produced by a map rather than being $binary_remote_addr directly. nginx
+# does not count a request whose limit key evaluates to empty, so this lets a single
+# http-context `limit_req` apply to wp-login.php ONLY, and leaves every other request
+# completely untouched. That is what avoids per-vhost edits.
+#
+# Both paths are matched: /wp-login.php (classic layout, e.g. Shucked) and
+# /wp/wp-login.php (Bedrock-style layout where core lives in /wp — AVFTB, CBA,
+# Matchbook). Getting this wrong is how the xmlrpc rule sat on the wrong path for
+# months, so match both everywhere rather than per-site.
+map $request_uri $wp_login_limit_key {
+    default                       "";
+    ~^/wp-login\.php              $binary_remote_addr;
+    ~^/wp/wp-login\.php           $binary_remote_addr;
+}
+
+# 20 requests/minute/IP with a burst of 5. A human logging in never approaches this.
+# Sized to blunt brute force, NOT to stop it — an attacker with valid credentials is
+# unaffected by rate limiting, which is why 2FA is the actual control. This is depth.
+limit_req_zone $wp_login_limit_key zone=wp_login:10m rate=20r/m;
+limit_req      zone=wp_login burst=5 nodelay;
+limit_req_status 429;
+
+# Brute-force attempts should be greppable. Without this they are indistinguishable
+# from ordinary 429s in the access log.
+limit_req_log_level warn;
