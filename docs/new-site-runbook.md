@@ -13,6 +13,36 @@ live. Three layers: **code** (runtime), **droplet** (infra), **delivery** (this 
    `main` + `develop`. First `npm run build`.
    *(Runtime setup is unchanged by this kit; see the mythus/ix docs.)*
 
+> **The satis registry needs credentials, since 2026-08-26.** `packages.vincentragosta.io`
+> is HTTP basic auth (`auth_basic`, htpasswd at `/etc/nginx/.htpasswd-satis` on the
+> vincentragosta.io droplet). Every consumer needs a `packages.vincentragosta.io` entry in
+> its `auth.json` alongside the ACF Pro one:
+>
+> ```json
+> "http-basic": {
+>     "connect.advancedcustomfields.com": { "username": "...", "password": "..." },
+>     "packages.vincentragosta.io":       { "username": "composer", "password": "..." }
+> }
+> ```
+>
+> **Put it in place BEFORE the first deploy.** The hook does `git checkout -f` and *then*
+> `composer install`; if composer 401s, the site is left with new code against a stale
+> `vendor/`, which is worse than a clean failure.
+>
+> On the droplet it must live at **`/root/.config/composer/auth.json`** — composer's actual
+> home. Three ARTHOUSE droplets carried the credentials at `/root/.composer-auth.json`, a
+> non-standard name composer never reads; deploys only worked because a copy also sat in each
+> docroot, and composer picks up an `auth.json` from its working directory. That worked by
+> luck: `deploy/profiles/mythus-ix.sh` runs `composer install` from **four** directories
+> (docroot, mythus, ix, child theme), and only the first has one. Verify with:
+>
+> ```bash
+> composer config --global home        # expect /root/.config/composer
+> ```
+>
+> The password is recoverable from any droplet's `auth.json` if lost. Rotating it means
+> `htpasswd -B /etc/nginx/.htpasswd-satis composer` plus every `auth.json` in the fleet.
+
 ## 1. Droplet — base (once per box)
 ```bash
 # on a fresh Ubuntu 24.04 droplet, as root:
