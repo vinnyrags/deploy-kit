@@ -158,6 +158,28 @@ Sites not on the Mythus stack cannot take this fix and need the equivalent mu-pl
 the post-receive hook reinstalls from that lock and will silently revert you. See
 [deploy-doctrine.md](deploy-doctrine.md).
 
+## Not built: the audit script, and monitoring
+
+Everything in this document was verified by hand during the 2026-08-24/25 sweep — ad-hoc curl and
+ssh, reconstructed from scratch each time. There is no script that runs the checklist.
+
+The obvious next tool is `provision/audit.sh`: the four username-enumeration vectors, xmlrpc on both
+`/xmlrpc.php` and `/wp/xmlrpc.php`, PHP execution under uploads, `/scripts/` exposure, admin-account
+count, database dumps sitting in a docroot, ufw state, swap, and cert expiry. Read-only, one host or
+the fleet, exit non-zero on a finding.
+
+Monitoring is that same script on a timer, alerting only on change. **Both are deliberately parked**
+— Marc declined monitoring for ARTHOUSE on 2026-08-26 and the personal sites are held with it. This
+is a decision, not a backlog item that got forgotten; do not re-pitch it unprompted.
+
+Worth recording why it was proposed: the Celebrity Autobiography spam went unnoticed for roughly a
+fortnight, and most of what the sweep found was months old. That is why it all landed at once as an
+emergency rather than as routine maintenance. If there is ever another compromise or near-miss, that
+is the argument to bring back.
+
+The audit script has value even without the alerting half, since it turns a two-day investigation
+into a five-minute command.
+
 ## Related
 
 - [cloudflare-edge-settings.md](cloudflare-edge-settings.md) — real-IP detail, and the still-open
