@@ -33,6 +33,11 @@ server {
     # xmlrpc is blocked by snippets/wp-hardening.conf, included above. It used to be an
     # exact `location = /xmlrpc.php` here, which silently missed /wp/xmlrpc.php on the
     # Bedrock-style layout — so it was open on every Mythus site while looking correct.
+    # wp-config-env.php is blocked there too, as of 2026-08-28. new-site.sh writes that
+    # file into the web root, and this template never denied it — so every site built
+    # from this kit served DB password + all eight salts to the PHP handler. Keep the
+    # rule in the snippet, not here: harden.sh guarantees the snippet precedes the
+    # generic `location ~ \.php$` below, which is the whole failure mode.
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     location / { try_files $uri $uri/ /index.php?$args; }
 

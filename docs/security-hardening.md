@@ -31,7 +31,19 @@ The snippet carries:
 | `limit_req zone=wp_login burst=10` | 30r/m/IP on `wp-login.php` only |
 | `location ~ ^/(wp/)?xmlrpc\.php$` | 403 on both layouts |
 | `location ~* /(?:uploads\|files)/.*\.php$` | PHP in uploads cannot execute |
+| `location ~ wp-config-env\.php` | DB password + all eight salts never served |
 | `location ^~ /scripts/` | Operational scripts never served from the docroot |
+
+> **`wp-config-env.php` was added 2026-08-28 and is not yet rolled out.** The rule is in this repo;
+> the running droplets still need the snippet copied to them. Until then all four ARTHOUSE droplets
+> serve `/wp-config-env.php` at **200** (six vhosts — Shucked is excepted, it keeps its secrets
+> inline in `wp-config.php` and has no such file). Nothing leaks today: the file is only `define()`
+> calls, so PHP executes it and returns an empty body. It becomes credential disclosure the moment
+> PHP-FPM is down or the handler breaks. Roll out per droplet with
+> `cp nginx/wp-hardening.snippet.conf /etc/nginx/snippets/wp-hardening.conf && nginx -t && systemctl
+> reload nginx`, then confirm `curl -o /dev/null -w '%{http_code}\n' https://<site>/wp-config-env.php`
+> returns **403**. Re-running `harden.sh` does the same thing — step 3 always re-copies the snippet,
+> and the vhost loop no-ops because the include is already present on all eight vhosts.
 
 ## Usage
 
