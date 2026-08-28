@@ -53,6 +53,66 @@ harden.sh --only <vhost>       # apply, patching only that vhost — staging fir
 harden.sh                      # apply to every enabled vhost
 ```
 
+---
+
+## Outbound mail — `provision/mail.sh`
+
+Every droplet ships with `sendmail_path` pointing at `/usr/sbin/sendmail` and **no MTA behind it**,
+so `wp_mail()` fails silently: password resets, form notifications and admin notices all vanish with
+no error anyone sees. `mail.sh` installs the msmtp relay that fixes it.
+
+```bash
+mail.sh --check                                              # report, change nothing
+mail.sh --provider resend --key-file /root/.resend_key \
+        --from noreply@example.com --test-to you@example.com
+mail.sh --test-to you@example.com                            # verify only
+```
+
+The API key is read from a **file or stdin, never an argument** — arguments are visible to any user
+via `ps`.
+
+### The permission bug this exists to prevent
+
+msmtp's config holds a password, so the instinct is `0600 root:root`. **That is wrong, and it fails
+in the most misleading way available.** PHP-FPM runs as `www-data`; a root-only config means every
+*web-initiated* email fails with `account default not found: no configuration file available`, while
+every `wp-cli` send over SSH succeeds because root can read the file.
+
+So the box looks healthy from a terminal and is broken for real users. `vincentragosta.io` sat like
+that from 2026-05-11 to 2026-08-28 — `msmtp.log` full of `exitcode=EX_OK` entries, all of them
+root's, while WordPress issued password-reset keys with no send at all. Three separate
+investigations misdiagnosed it: "no MTA binary" said broken when it worked; `wp_mail()` returning
+`true` said working when only root worked; reading the log said working because the entries were
+root's.
+
+The file must be **`0640 root:www-data`**. msmtp only rejects a config that is group/world
+*writable*; group-readable is fine. `mail.sh` sets this, and `--check` flags it if something else
+has changed it.
+
+> **Never verify mail with `wp eval` over SSH.** That is the one context that works while the site
+> is broken. Use `--test-to`, which sends as `www-data`, and then read the *delivered* headers — a
+> `250` from the relay only proves it was accepted for relay, not that it authenticated or arrived.
+
+### Deliverability
+
+The From address must be on a domain the provider has **verified**, or the message is refused
+(Resend) or silently rewritten to the authenticated account (Gmail — mail then arrives from a
+personal mailbox, which reads as phishing on a password reset).
+
+**Verify the domain, not a single sender address.** Domain verification is what yields a DKIM
+signature aligned to the site's own domain, and DKIM alignment is what DMARC actually checks. A
+working result looks like this in the delivered headers:
+
+```
+dkim=pass  header.i=@<site-domain>
+spf=pass
+dmarc=pass header.from=<site-domain>
+```
+
+The application half is `IX\Providers\Theme\Hooks\MailIdentity`, which sets the WordPress From
+address. It is inert until `IX_MAIL_FROM` is defined in that environment's `wp-config-env.php` — so
+the relay and the From address are configured in the same place, per environment.
+
 Idempotent. Re-running is safe and is also how you refresh the Cloudflare ranges.
 
 Backups go to `/root/nginx-bak/harden-<stamp>/` with a `manifest.txt` recording where each vhost
