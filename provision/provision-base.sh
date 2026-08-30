@@ -52,6 +52,27 @@ ln -sf /etc/nginx/sites-available/000-drop-default /etc/nginx/sites-enabled/000-
 rm -f /etc/nginx/sites-enabled/default
 touch /etc/nginx/conf.d/wp-fastcgi-cache.conf   # new-site.sh appends per-site blocks
 
+# Droplet-level fastcgi_cache_key. Required by every vhost that sets `fastcgi_cache`.
+#
+# Its absence is only a WARNING — `nginx -t` still prints "test is successful" — so a
+# missing key does NOT fail provisioning. It fails in production instead: every cached
+# response collides on one key and the whole site serves whichever page cached first,
+# for every URL. That is what happened to vincentragosta.io on 2026-08-30.
+#
+# Guarded because a second copy in the same context is a duplicate-directive error:
+# already-provisioned boxes carry it in nginx.conf's http block.
+if ! grep -rq 'fastcgi_cache_key' /etc/nginx/ 2>/dev/null; then
+  cat > /etc/nginx/conf.d/00-fastcgi-cache-key.conf <<'CACHEKEY'
+# Droplet-level FastCGI cache key — installed by provision-base.sh.
+# Without it every cached response collides on a single key. See
+# docs/droplet-cache-convention.md.
+fastcgi_cache_key "$scheme$request_method$host$request_uri";
+CACHEKEY
+  log "installed droplet-level fastcgi_cache_key"
+else
+  log "fastcgi_cache_key already present — left alone"
+fi
+
 log "deploy-kit @ /opt/deploy-kit (pinned ${DEPLOY_KIT_REF:-main})"
 [ -d /opt/deploy-kit/.git ] || git clone -q https://github.com/vinnyrags/deploy-kit /opt/deploy-kit
 git -C /opt/deploy-kit fetch -q --tags origin
@@ -62,5 +83,13 @@ log "wordpress hardening (cloudflare real-ip, wp-login rate limit, xmlrpc block)
 # and re-running it is how the Cloudflare ranges get refreshed.
 bash /opt/deploy-kit/provision/harden.sh
 
-nginx -t && systemctl reload nginx
+# `nginx -t &&` is not sufficient on its own: nginx exits 0 on warnings, so a config
+# that is silently broken at runtime still passes. Assert the specific warning is absent.
+nginx -t || exit 1
+if nginx -t 2>&1 | grep -q 'no "fastcgi_cache_key"'; then
+  echo "FATAL: fastcgi_cache is enabled with no fastcgi_cache_key." >&2
+  echo "       nginx -t PASSES in this state; the site would serve one page for all URLs." >&2
+  exit 1
+fi
+systemctl reload nginx
 log "BASE DONE (php ${PHP_VER}). NEXT: run 'mysql_secure_installation', then new-site.sh per site."

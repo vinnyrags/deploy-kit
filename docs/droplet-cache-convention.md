@@ -33,9 +33,45 @@ harmful; they're recorded so the doc isn't read as describing behavior that exis
 - **`fastcgi_cache_key` is droplet-level, not per-site.** File 1 below lists it, but
   `nginx/wp-fastcgi-cache.conf.template` (which `new-site.sh` *appends* once per site)
   omits it — correctly, since a second copy in the same context is a duplicate-directive
-  error. On every live box it sits in `nginx.conf`'s `http` block. A droplet provisioned
-  without it will fail `nginx -t` the moment a vhost sets `fastcgi_cache`; see
+  error. On every live box it sits in `nginx.conf`'s `http` block; see
   `provision/provision-base.sh`.
+
+  > ### ⚠️ A missing `fastcgi_cache_key` does NOT fail `nginx -t`
+  >
+  > **This document previously claimed it did. That was wrong, and the wrong claim is what
+  > let it ship.** nginx emits a *warning* and the test still passes:
+  >
+  > ```
+  > [warn] no "fastcgi_cache_key" for "fastcgi_cache" in /etc/nginx/nginx.conf:61
+  > nginx: configuration file /etc/nginx/nginx.conf test is successful
+  > ```
+  >
+  > **Consequence when it is missing: every cached response collides on one key, and the
+  > whole site serves whichever page was cached first — for every URL, including 404s.**
+  > Hit `vincentragosta.io` on 2026-08-30: one file in `/var/cache/nginx/fastcgi-vinrag`
+  > was serving the entire site, and `/zzq7x4-nonexistent/` returned `200` with the
+  > Contact page. The four ARTHOUSE droplets were provisioned with the key and were
+  > unaffected.
+  >
+  > **The real check — grep the warning, never trust the exit status or the success line:**
+  >
+  > ```bash
+  > nginx -t 2>&1 | grep 'no "fastcgi_cache_key"'   # must output NOTHING
+  > ```
+  >
+  > **Then prove it with distinct pages, and do it WITHOUT a query string.** The bypass map
+  > includes `~*\?(.+)$ 1`, so any cache-buster skips the cache entirely and gives a false
+  > pass — that mistake hid this fault for two days:
+  >
+  > ```bash
+  > for p in / /contact/ /projects/; do
+  >   curl -s "https://<host>$p" | grep -oE '<title>[^<]*'
+  > done   # three DIFFERENT titles, and re-run so the second pass is a HIT
+  > ```
+  >
+  > Recovery is: add the key to `nginx.conf`'s `http` block, **purge
+  > `/var/cache/nginx/<zone-dir>/*`** (stale poisoned entries survive the reload
+  > otherwise), then reload.
 
 ## Trap — `sites-enabled/` is the live copy, `sites-available/` is stale
 

@@ -80,7 +80,19 @@ render -e "s#{{SERVER_NAMES}}#${STG_DOMAIN}#g" -e "s#{{WEBROOT}}#${STG_ROOT}#g" 
 ln -sf "/etc/nginx/sites-available/${DOMAIN}"     "/etc/nginx/sites-enabled/${DOMAIN}"
 ln -sf "/etc/nginx/sites-available/${STG_DOMAIN}" "/etc/nginx/sites-enabled/${STG_DOMAIN}"
 mkdir -p "/var/cache/nginx/${ZONE_DIR}" "/var/cache/nginx/${ZONE_DIR}-staging"
-nginx -t && systemctl reload nginx
+
+# This script is what turns caching ON for a site, so it is the last point at which a
+# missing droplet-level fastcgi_cache_key can be caught before it reaches production.
+# `nginx -t` alone will NOT catch it — nginx warns and exits 0. Without the key every
+# cached response collides on one key and the site serves one page for every URL.
+nginx -t || exit 1
+if nginx -t 2>&1 | grep -q 'no "fastcgi_cache_key"'; then
+  echo "FATAL: this vhost enables fastcgi_cache but the droplet has no fastcgi_cache_key." >&2
+  echo "       Run provision-base.sh, or add it to nginx.conf's http block, then re-run." >&2
+  echo "       See docs/droplet-cache-convention.md." >&2
+  exit 1
+fi
+systemctl reload nginx
 
 cat <<DONE
 
