@@ -44,6 +44,29 @@
 #
 #   The API key is read from a FILE or stdin, never an argument — arguments are
 #   visible to any user via ps.
+#
+# ---------------------------------------------------------------------------
+# DIGITALOCEAN BLOCKS OUTBOUND SMTP ON SOME ACCOUNTS
+#
+# Symptom: this script appears to hang, then msmtp.log shows
+#   errormsg='cannot connect to smtp.resend.com, port 587: Connection timed out'
+#   exitcode=EX_TEMPFAIL
+#
+# It is not a config or credential fault — the packets never leave. DO blocks
+# 25/465/587 outbound on some accounts and will lift it on request via a support
+# ticket. Resend also listens on 2587, which is usually open, and that is the
+# faster fix:
+#
+#   --host smtp.resend.com --port 2587 --user resend
+#
+# This is per-account, not fleet-wide: ellenharvey-prod-01 (2026-09-03) has
+# 25/465/587 blocked and 2587 open, while 174.138.70.29 sends happily on 587.
+# Check before assuming, from the droplet itself:
+#
+#   for p in 587 465 2587 25; do
+#     timeout 8 bash -c "echo > /dev/tcp/smtp.resend.com/$p" 2>/dev/null \
+#       && echo "OPEN $p" || echo "BLOCKED $p"
+#   done
 
 set -euo pipefail
 
@@ -52,7 +75,8 @@ BACKUP="/root/mail-backups/${STAMP}"
 CONF=/etc/msmtprc
 LOGFILE=/var/log/msmtp.log
 
-PROVIDER=""; HOST=""; PORT=587; USERNAME=""; KEYFILE=""; FROM=""; TEST_TO=""; CHECK=0
+# PORT starts empty so an explicit --port survives the provider defaults below.
+PROVIDER=""; HOST=""; PORT=""; USERNAME=""; KEYFILE=""; FROM=""; TEST_TO=""; CHECK=0
 
 log(){ echo ">> $*"; }
 die(){ echo "ERROR: $*" >&2; exit 1; }
@@ -113,11 +137,17 @@ EOF
 fi
 
 # --- resolve provider ---------------------------------------------------------------
+# The provider supplies defaults; it must not clobber anything given explicitly.
+# This block runs AFTER argument parsing, so assigning PORT unconditionally here
+# silently discarded a --port the caller had already passed. That cost a debugging
+# cycle on ellenharvey-prod-01, where 587 is blocked and 2587 is required.
 case "$PROVIDER" in
-  resend) HOST=smtp.resend.com; PORT=587; USERNAME=resend ;;
+  resend) HOST="${HOST:-smtp.resend.com}"; PORT="${PORT:-587}"; USERNAME="${USERNAME:-resend}" ;;
   "")     : ;;
   *)      die "unknown provider: $PROVIDER (known: resend)" ;;
 esac
+
+PORT="${PORT:-587}"
 
 [ -n "$HOST" ]     || die "--host or --provider required"
 [ -n "$USERNAME" ] || die "--user required"
