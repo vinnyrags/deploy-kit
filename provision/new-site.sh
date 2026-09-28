@@ -94,6 +94,18 @@ if nginx -t 2>&1 | grep -q 'no "fastcgi_cache_key"'; then
 fi
 systemctl reload nginx
 
+# Provisioning is not done until the site is verified. This deliberately runs
+# before the "READY" banner: a banner that prints regardless of outcome is how
+# this fleet lost 24 days on an unpatched production site.
+echo
+"$KIT/provision/verify-site.sh" "$SLUG" "$DOMAIN" --env both || {
+  echo
+  echo ">> Infra is provisioned but VERIFY FAILED (see above)."
+  echo "   Pre-deploy failures are expected: WordPress is not installed and TLS is not"
+  echo "   issued yet. Re-run after step 3/4/5 below and expect a clean pass:"
+  echo "     $KIT/provision/verify-site.sh ${SLUG} ${DOMAIN} --env both"
+}
+
 cat <<DONE
 
 >> SITE INFRA READY: ${SLUG}  (prod ${DOMAIN} / staging ${STG_DOMAIN}, php ${PHP_VER})
@@ -107,4 +119,8 @@ cat <<DONE
       (or DNS-01 pre-issue for a no-gap cutover — see the Shucked runbook).
    4. First deploy: push develop/main → the code lands + builds.
    5. wp core install / import the DB.
+   6. VERIFY — this is the step that decides whether it worked:
+        $KIT/provision/verify-site.sh ${SLUG} ${DOMAIN} --env both
+      Exit 0 or it is not provisioned. Run it after TLS exists, since
+      FORCE_SSL_ADMIN makes the login and dashboard checks unanswerable over http.
 DONE

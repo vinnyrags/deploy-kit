@@ -18,7 +18,14 @@ profile_deploy() {
   checkout_tree "$branch" "$dest"
   clean_tree "$branch" "$dest" "wp-content/themes/${THEME}/src"
   restore "$dest/wp-config-env.php" "$envbak"
-  cp /root/.composer-auth.json "$dest/auth.json" 2>/dev/null || true   # ACF Pro auth
+  # ACF Pro + satis credentials. Composer's real home is /root/.config/composer;
+  # /root/.composer-auth.json is a non-standard name composer never reads on its
+  # own, and it is where three older droplets keep theirs. Try the correct path
+  # first, fall back to the legacy one, and say so if neither exists — a silent
+  # miss here means composer 401s and leaves new code against a stale vendor/.
+  if   [ -f /root/.config/composer/auth.json ]; then cp /root/.config/composer/auth.json "$dest/auth.json"
+  elif [ -f /root/.composer-auth.json ];        then cp /root/.composer-auth.json        "$dest/auth.json"
+  else log "WARNING: no composer auth.json found — private packages will 401"; fi
 
   log "composer install (root + mythus + ix + child)…"
   ( cd "$dest";   COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction --no-scripts )
@@ -36,4 +43,6 @@ profile_deploy() {
   restart_fpm
   flush_fastcgi "$(conf_map CACHE_DIR "$branch")"
   flush_redis "$wp_path"
+
+  smoke_test "$dest" "$env"
 }

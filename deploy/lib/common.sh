@@ -42,3 +42,40 @@ restart_fpm() {
   local action="${FPM_ACTION:-reload}" ver="${PHP_VER:-8.3}"
   systemctl "$action" "php${ver}-fpm" 2>/dev/null || systemctl restart "php${ver}-fpm"
 }
+
+# Post-deploy smoke test. The deploy hook reports success when the PUSH and BUILD
+# succeeded — not when the site still works. A green banner over a broken site is
+# the fleet's most expensive failure mode: an unconditional "deploy complete" left
+# AVFTB production on an unpatched WordPress for 24 days.
+#
+# Asks WordPress where it lives rather than guessing from the docroot path, then
+# hits that host on loopback so the check is not answered by a CDN edge and works
+# before DNS exists. Never rolls anything back — the code is already live; this
+# exists so the failure is LOUD, and so CI goes red instead of green.
+smoke_test() {
+  local dest="$1" env="$2"
+  local wp="sudo -u www-data wp --path=wp"
+
+  [ -f "$dest/wp/wp-load.php" ] || { log "smoke: core not present, skipped"; return 0; }
+  ( cd "$dest" && $wp core is-installed >/dev/null 2>&1 ) || { log "smoke: WordPress not installed, skipped"; return 0; }
+
+  local home host scheme port codenum
+  home="$( cd "$dest" && $wp option get home 2>/dev/null )"
+  [ -n "$home" ] || { log "smoke: could not resolve home_url, skipped"; return 0; }
+  host="${home#*://}"; host="${host%%/*}"
+  scheme=https; port=443
+  [ -d "/etc/letsencrypt/live/${host}" ] || { scheme=http; port=80; }
+
+  codenum="$(curl -sk --resolve "${host}:${port}:127.0.0.1" -o /dev/null -w '%{http_code}' "${scheme}://${host}/" || echo 000)"
+  if [ "$codenum" = 200 ] || [ "$codenum" = 301 ] || [ "$codenum" = 302 ]; then
+    log "smoke: ${host} -> ${codenum} OK"
+    return 0
+  fi
+
+  echo "============================================" >&2
+  log "SMOKE TEST FAILED: ${host} returned ${codenum}" >&2
+  log "The code IS deployed to ${env} (${dest}) — this is not a rollback." >&2
+  log "The site is not serving. Check php-fpm, the theme build, and the error log." >&2
+  echo "============================================" >&2
+  return 1
+}

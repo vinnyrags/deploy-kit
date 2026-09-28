@@ -15,6 +15,20 @@ PHP_VER="${1:-8.4}"
 export DEBIAN_FRONTEND=noninteractive
 log(){ echo ">> $*"; }
 
+# A freshly-created droplet is usually still running cloud-init and
+# unattended-upgrades, which hold the dpkg lock. Without this the very first
+# apt-get dies with "Could not get lock /var/lib/dpkg/lock-frontend" and the
+# whole run aborts — a pure race, so it passes or fails depending on how fast
+# you SSH in. Check the lock itself; do NOT pgrep for unattended-upgr, because
+# `unattended-upgrade-shutdown --wait-for-signal` runs permanently and holds
+# nothing.
+log "waiting for dpkg lock (cloud-init / unattended-upgrades)"
+for _i in $(seq 1 120); do
+  fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+  sleep 5
+done
+fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && { echo "FATAL: dpkg still locked after 10m" >&2; exit 1; }
+
 log "apt update + base packages"
 apt-get update -y
 apt-get install -y software-properties-common curl git unzip ca-certificates
