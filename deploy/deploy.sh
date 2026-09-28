@@ -16,6 +16,17 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BARE="$(cd "${GIT_DIR:-$PWD}" && pwd)"
 export BARE
 
+# Node comes from nvm, which is not on a non-login shell's PATH. The post-receive
+# hook sources it, but deploy.sh is also run by hand to replay a deploy during
+# recovery — and without this that run dies at the npm build with a bare
+# "npm: command not found", after composer has already changed the tree.
+# Harmless when the hook has already loaded it.
+if [ -s "${NVM_DIR:-/root/.nvm}/nvm.sh" ] && ! command -v npm >/dev/null 2>&1; then
+  export NVM_DIR="${NVM_DIR:-/root/.nvm}"
+  # shellcheck disable=SC1091
+  . "$NVM_DIR/nvm.sh"
+fi
+
 # shellcheck disable=SC1090
 source "$KIT/deploy/lib/common.sh"
 # shellcheck disable=SC1090
