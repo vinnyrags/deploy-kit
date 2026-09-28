@@ -87,8 +87,23 @@ check_env() { # check_env <host> <docroot> <label>
 
   # ---- WordPress layer -------------------------------------------------------
   if [ ! -f "$root/wp/wp-load.php" ]; then
-    skip "WordPress checks (core not deployed yet)"; return
+    # Nothing is deployed yet, so an empty docroot answering 403 is the correct
+    # state, not a fault. Failing here on a fresh provision would train people to
+    # ignore this script, which is worse than not having it.
+    skip "WordPress checks (core not deployed yet)"
+    skip "homepage / cache checks (nothing deployed yet)"
+    return
   fi
+
+  # Does the site actually serve? An empty docroot answers 403 "directory index
+  # is forbidden" and every downstream check then reports something misleading.
+  # Name the real problem instead.
+  local hc; hc="$(code "$host" /)"
+  case "$hc" in
+    200|301|302) ok "homepage responds (${hc})" ;;
+    403) bad "homepage responds" "403 — code is deployed but nothing is served. Is index.php present in the docroot?" ;;
+    *)   bad "homepage responds" "got ${hc}" ;;
+  esac
   if ! (cd "$root" && $WP core is-installed >/dev/null 2>&1); then
     skip "WordPress checks (core deployed, not installed)"
     bad "installer is NOT publicly reachable" "an uninstalled WordPress serves /wp/wp-admin/install.php to anyone — complete the install or take the site offline"
@@ -139,16 +154,6 @@ check_env() { # check_env <host> <docroot> <label>
   else
     skip "dashboard reachability (no administrator account)"
   fi
-
-  # Does the site actually serve? An empty docroot answers 403 "directory index
-  # is forbidden" and every downstream check then reports something misleading.
-  # Name the real problem instead.
-  local hc; hc="$(code "$host" /)"
-  case "$hc" in
-    200|301|302) ok "homepage responds (${hc})" ;;
-    403) bad "homepage responds" "403 — docroot has no front controller. Is index.php deployed? An empty docroot looks exactly like this." ;;
-    *)   bad "homepage responds" "got ${hc}" ;;
-  esac
 
   # Micro-cache actually engaged. Query strings are in the skip-map, so use a
   # bare path and prime it first.
