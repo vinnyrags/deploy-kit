@@ -12,7 +12,11 @@ define( 'DB_PASSWORD', '{{DB_PASSWORD}}' );
 define( 'DB_HOST', 'localhost' );
 
 define( 'WP_HOME', '{{WP_HOME}}' );
-define( 'WP_SITEURL', '{{WP_HOME}}' );
+// Core lives in the /wp subdirectory on this fleet, so WP_SITEURL must NOT equal
+// WP_HOME. If it does, site_url() resolves to the docroot and wp_login_url()
+// returns /wp-login.php, which nginx 404s — wp-admin then bounces to a dead
+// reauth URL and you cannot reach the dashboard at all. Matches AVFTB.
+define( 'WP_SITEURL', WP_HOME . '/wp' );
 define( 'WP_ENVIRONMENT_TYPE', '{{WP_ENV}}' );   // production | staging
 
 define( 'WP_DEBUG', {{WP_DEBUG}} );

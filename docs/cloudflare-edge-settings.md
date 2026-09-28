@@ -11,7 +11,12 @@ on Cloudflare at all (CBA, vincentragosta.io, itzenzo.tv) are unaffected by ever
 
 ## Encrypted ClientHello (ECH) — disabled fleet-wide 2026-08-20
 
-**ECH is off on `viewfromthebridgeplay.com` and `matchbookfestival.com`.** Keep it off.
+**ECH is off on `viewfromthebridgeplay.com`, `matchbookfestival.com` and
+`3summersoflincoln.com`.** Keep it off.
+
+**New zones arrive with ECH ON.** `3summersoflincoln.com` was found `"ech": "on"` at provisioning
+on 2026-09-28, before any DNS record existed — so this is not drift, it is the Free-zone default.
+Turn it off *before* adding records and the HTTPS record is never published carrying it.
 
 ### What happened
 
@@ -80,7 +85,11 @@ failing for a subset of visitors with no deploy on our side. **If this symptom r
 re-check `TYPE65` before investigating anything else** — and check the zone audit log to
 see whether Cloudflare flipped it back.
 
-Zone ids: AVFTB `cb38a7eae662d5981a5fa7b814917eb8` · MBF `3bb7322443a62e2b5ead8f4a06f4d3f1`.
+Zone ids: AVFTB `cb38a7eae662d5981a5fa7b814917eb8` · MBF `3bb7322443a62e2b5ead8f4a06f4d3f1` ·
+3SOL `9f7b50f0e29ca2281b1139129d25ab40`.
+
+A zone with ECH off publishes a `\# 61` byte HTTPS record; 3SOL and AVFTB both match byte-for-byte
+in length. That is the check — not the hex payload, which differs per zone.
 
 ## Origin visibility gap — CLOSED 2026-08-25
 

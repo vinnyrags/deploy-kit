@@ -3,8 +3,9 @@
 The ordered lifecycle for standing up a new Mythus/IX WordPress site, from nothing to
 live. Three layers: **code** (runtime), **droplet** (infra), **delivery** (this kit).
 
-> Status: laid out, **not yet battle-tested** — the first real site is the acceptance
-> test; fix templates as issues surface (worst case is an `nginx -t` failure).
+> Status: **battle-tested once.** 3 Summers of Lincoln was provisioned end-to-end with this
+> runbook on 2026-09-28 (droplet `3sol-prod-01`, kit `v1.1`) with no template failures. The
+> corrections that run surfaced are folded in below — most importantly step 1's MariaDB note.
 
 ## 0. Code (your Mac) — the runtime
 1. Scaffold a child theme from **Ena** (`bin/rename`), wire `composer.json` to satis +
@@ -45,12 +46,29 @@ live. Three layers: **code** (runtime), **droplet** (infra), **delivery** (this 
 
 ## 1. Droplet — base (once per box)
 ```bash
-# on a fresh Ubuntu 24.04 droplet, as root:
-curl -fsSL https://raw.githubusercontent.com/vinnyrags/deploy-kit/main/provision/provision-base.sh | bash -s 8.4
-mysql_secure_installation      # set the MariaDB root password
+# on a fresh Ubuntu 24.04 droplet, as root. Pin the ref — do not track main:
+DEPLOY_KIT_REF=v1.1 bash -c 'curl -fsSL https://raw.githubusercontent.com/vinnyrags/deploy-kit/v1.1/provision/provision-base.sh | bash -s 8.4'
 ```
 Installs nginx + php-fpm + mariadb + node + composer + wp-cli, the cache dir + drop-default
-vhost, and deploy-kit at `/opt/deploy-kit`.
+vhost, the droplet-level `fastcgi_cache_key`, `harden.sh`, and deploy-kit at `/opt/deploy-kit`.
+
+> **Do NOT run `mysql_secure_installation`.** Earlier revisions of this runbook told you to, to
+> "set the MariaDB root password". That advice is wrong on Ubuntu 24.04 / MariaDB 10.11 and it is
+> actively harmful:
+>
+> - Root already ships as `unix_socket` with `authentication_string: "invalid"` — password auth is
+>   **impossible**, not merely unset. Verify with
+>   `mysql -N -e 'SELECT User,Host,JSON_DETAILED(Priv) FROM mysql.global_priv WHERE User="root";'`
+>   and prove the boundary with `sudo -u www-data mysql -uroot -e 'SELECT 1;'` (want *Access denied*).
+> - Anonymous users and the `test` database are already absent; MariaDB binds to `127.0.0.1`. The
+>   only thing the script would change is **switching password auth on**, which is a downgrade.
+> - `new-site.sh` creates databases as root **over the socket**. Setting a root password breaks it
+>   unless you also add a `/root/.my.cnf`. The AVFTB droplet has a root password and no `.my.cnf`,
+>   which is exactly why `new-site.sh` would fail on that box today.
+>
+> Add a swapfile instead, which the base script does not do and every fleet box has:
+> `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`
+> plus an `/etc/fstab` line.
 
 ## 2. Droplet — the site's infra
 ```bash
@@ -68,10 +86,35 @@ deploy-kit/bin/onboard.sh <repo_dir> <gh_repo> <droplet_ip> <slug>
 Sets the dedicated deploy key (forced-command), the three GitHub secrets, and writes the
 caller workflow. Commit + push it (needs gh `workflow` scope).
 
-## 4. DNS + TLS
-- Point Cloudflare records (apex, `www`, `staging.`) at the droplet.
-- `certbot --nginx -d <domain> -d www.<domain>` and `certbot --nginx -d staging.<domain>`
-  — or **DNS-01 pre-issue** for a no-TLS-gap cutover (see the Shucked engagement).
+## 4. DNS + TLS — issue BEFORE you point DNS
+The vhost template listens on **port 80 only**; certbot adds the 443 block. If the zone's SSL mode
+is Full or Full (strict) — it should be — then pointing proxied records at a droplet with no 443
+listener gives every visitor a **521** until certbot finishes. Pre-issue over DNS-01 and there is
+no gap at all, and no window where the raw origin IP sits in public DNS:
+
+```bash
+apt-get install -y python3-certbot-dns-cloudflare
+install -d -m 700 /root/.secrets
+printf 'dns_cloudflare_api_token = %s\n' "$CF_TOKEN" > /root/.secrets/cloudflare.ini
+chmod 600 /root/.secrets/cloudflare.ini
+
+certbot certonly --non-interactive --agree-tos -m <email> \
+  --authenticator dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+  --dns-cloudflare-propagation-seconds 30 -d <domain> -d www.<domain>
+certbot install --nginx --cert-name <domain> --non-interactive --redirect
+```
+The token needs `Zone:DNS:Edit` (to write `_acme-challenge`) and `Zone:Zone Settings:Edit` (for ECH,
+below). *Then* add the proxied A records for apex, `www` and `staging.`.
+
+**Re-run `harden.sh --check` after certbot.** Certbot rewrites the vhosts; confirm the hardening
+snippet and the `fastcgi_cache` directive both survived before you call it done.
+
+**Check ECH on a new zone — it is ON by default for Free zones.** `dig @1.1.1.1 <domain> TYPE65
++short` is the authority, not the API response or the dashboard. See
+[cloudflare-edge-settings.md](cloudflare-edge-settings.md).
+
+Once the origin has a real cert, move the zone from Full to **Full (strict)** — plain Full accepts
+any origin cert, including self-signed.
 
 ## 5. Go live
 - **First deploy:** push `develop` (→ staging) then `main` (→ prod). Code lands + builds

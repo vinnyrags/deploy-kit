@@ -75,7 +75,8 @@ works if the kit is ever unavailable.
 
 | Site | Profile | PHP | Notes |
 |---|---|---|---|
-| View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache |
+| View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache; kit pinned at `b3e057c` |
+| 3 Summers of Lincoln | `mythus-ix` | 8.4 | first site provisioned wholly by this kit (2026-09-28); pinned `v1.1` |
 | vincentragosta.io, ellenharvey | `mythus-ix` | 8.4 | same recipe |
 | Shucked | `classic` | 8.2 | no build; FastCGI micro-cache added 2026-08-19 |
 | itzenzo.tv | `nextjs` | — | PM2/systemd |
