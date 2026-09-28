@@ -69,6 +69,7 @@ works if the kit is ever unavailable.
 | [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), real-IP restoration, and the open origin-bypass gap |
 | [docs/security-hardening.md](docs/security-hardening.md) | `harden.sh` — what it installs, what is load-bearing, and what it does not stop |
 | [docs/nginx-5xx-triage-runbook.md](docs/nginx-5xx-triage-runbook.md) | Triaging origin 5xx |
+| [docs/fleet-known-risks.md](docs/fleet-known-risks.md) | Dormant problems on closed-engagement droplets, and whose call it is to fix them |
 | [docs/deploy-doctrine.md](docs/deploy-doctrine.md) | Push to origin; never mutate the server |
 
 ## Fleet (reference)
