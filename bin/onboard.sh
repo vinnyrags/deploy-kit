@@ -21,9 +21,18 @@ echo ">> generating deploy key"
 ssh-keygen -t ed25519 -f "$KEY" -N "" -C "deploy-${SLUG}-ci" -q
 
 echo ">> installing forced-command key on ${DROPLET} (git-receive-pack only, one repo)"
-LINE="command=\"git-shell -c \\\"git-receive-pack '${BARE}'\\\"\",no-port-forwarding,no-agent-forwarding,no-pty $(cat "${KEY}.pub")"
-ssh -o BatchMode=yes "root@${DROPLET}" \
-  "grep -qF 'deploy-${SLUG}-ci' ~/.ssh/authorized_keys || printf '%s\n' \"$LINE\" >> ~/.ssh/authorized_keys"
+# The key line is built here and sent as STDIN DATA, never interpolated into the
+# remote command string. Passing it as an argument means the remote shell
+# re-parses the escaped quotes, and it can silently swallow the command="..."
+# prefix — leaving a line that still contains the key and the comment, so a grep
+# for the comment finds it, but with no forced command and a broken first field.
+# The push then fails with "Permission denied (publickey)" and nothing explains
+# why. Hit on heywilma-connect 2026-09-29; the same script wrote a correct line
+# on three-summers-of-lincoln, so this is shell-dependent rather than reliable.
+printf 'command="git-shell -c \\"git-receive-pack '"'"'%s'"'"'\\"",no-port-forwarding,no-agent-forwarding,no-pty %s\n' \
+  "$BARE" "$(cat "${KEY}.pub")" \
+| ssh -o BatchMode=yes "root@${DROPLET}" \
+    "grep -qF 'deploy-${SLUG}-ci' ~/.ssh/authorized_keys && cat >/dev/null || cat >> ~/.ssh/authorized_keys"
 
 echo ">> setting GitHub secrets on ${GH_REPO}"
 gh secret set DEPLOY_SSH_KEY --repo "$GH_REPO" < "$KEY"
