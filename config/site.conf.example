@@ -12,6 +12,10 @@ THEME=aviewfromthebridge          # child theme directory name
 PHP_VER=8.4                       # 8.4 (View/MBF), 8.3 (CA), etc.
 FPM_ACTION=restart                # restart (drops OPcache hard) | reload
 REDIS=0                           # 1 if a persistent object cache is enabled
+# GATED=1                         # site answers anonymous visitors with a password
+#                                 # gate (HTTP 401) — e.g. 3 Summers of Lincoln. The
+#                                 # smoke test and verify-site.sh then expect 401 on
+#                                 # the homepage and assert the gate is never cached.
 
 declare -A DEPLOY_DIR=(
   [main]=/var/www/viewfromthebridgeplay.com/public

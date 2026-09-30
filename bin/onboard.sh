@@ -47,7 +47,7 @@ on: { push: { branches: [develop, main] } }
 concurrency: deploy-\${{ github.ref_name }}
 jobs:
   deploy:
-    uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v1
+    uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v2
     with:
       bare_repo: ${SLUG}.git
     secrets:

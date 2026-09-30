@@ -9,7 +9,7 @@ name: Deploy (reusable)
 # Consumed like:
 #   jobs:
 #     deploy:
-#       uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v1
+#       uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v2   # needs droplet kit >= v1.5; older kits stay on @v1
 #       with:  { bare_repo: aviewfromthebridge.git }
 #       secrets: inherit   # DEPLOY_SSH_KEY / DROPLET_HOST / DROPLET_KNOWN_HOSTS
 on:
@@ -47,7 +47,24 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "${{ secrets.DROPLET_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
+      # git ignores a post-receive hook's exit status, so `git push` succeeds even
+      # when the droplet's build or smoke test fails. deploy.sh (kit >= v1.5)
+      # prints a `>> DEPLOY-KIT-RESULT: ok|skipped|fail` line; this step fails
+      # unless it reads ok or skipped. That is why this is @v2: a droplet on an
+      # older kit prints no result line, and every deploy would fail.
       - name: Deploy to droplet (post-receive builds + flushes cache)
         run: |
+          set -o pipefail
           git remote add droplet "root@${{ secrets.DROPLET_HOST }}:${{ inputs.repo_root }}/${{ inputs.bare_repo }}"
-          git push droplet "HEAD:refs/heads/${{ github.ref_name }}"
+          git push droplet "HEAD:refs/heads/${{ github.ref_name }}" 2>&1 | tee push.log
+
+          if grep -q 'Everything up-to-date' push.log; then
+            echo "::notice::Nothing pushed — the droplet already has this commit, so no deploy ran."
+            exit 0
+          fi
+          result="$(grep -o 'DEPLOY-KIT-RESULT: [a-z]*' push.log | tail -1 | awk '{print $2}')"
+          case "$result" in
+            ok|skipped) echo "deploy-kit result: $result" ;;
+            fail) echo "::error::Deploy failed on the droplet — see the remote output above. The code may be live; this is not a rollback."; exit 1 ;;
+            *)    echo "::error::No DEPLOY-KIT-RESULT line from the droplet. Is its deploy-kit pinned at v1.5 or later? Callers on older kits must stay on @v1."; exit 1 ;;
+          esac

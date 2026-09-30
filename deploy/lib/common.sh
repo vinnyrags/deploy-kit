@@ -72,6 +72,14 @@ smoke_test() {
     return 0
   fi
 
+  # A password-gated site (GATED=1 in the site conf) answers anonymous visitors
+  # with its gate as a 401 — that is the site working. Only for gated sites: on
+  # any other site a 401 means something is wrong.
+  if [ "${GATED:-0}" = 1 ] && [ "$codenum" = 401 ]; then
+    log "smoke: ${host} -> 401 OK (gated)"
+    return 0
+  fi
+
   echo "============================================" >&2
   log "SMOKE TEST FAILED: ${host} returned ${codenum}" >&2
   log "The code IS deployed to ${env} (${dest}) — this is not a rollback." >&2

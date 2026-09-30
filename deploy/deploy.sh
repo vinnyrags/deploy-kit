@@ -7,6 +7,13 @@
 # Usage (from post-receive):  deploy.sh <branch> <site.conf> [newrev] [oldrev]
 set -euo pipefail
 
+# The machine-readable outcome, printed last. git IGNORES a post-receive hook's
+# exit status — the push is accepted before the hook runs — so a failed build or
+# smoke test still left `git push`, and therefore CI, green. The v2 workflow reads
+# this line instead and fails unless it says `ok` or `skipped`.
+RESULT=">> DEPLOY-KIT-RESULT:"
+trap 'rc=$?; [ "$rc" -eq 0 ] || echo "$RESULT fail (exit $rc)"' EXIT
+
 BRANCH="${1:?branch required}"
 CONF="${2:?site conf required}"
 NEWREV="${3:-}"
@@ -38,6 +45,7 @@ source "$KIT/deploy/profiles/${PROFILE}.sh"      # -> profile_deploy()
 DEST="$(conf_map DEPLOY_DIR "$BRANCH")"
 if [ -z "$DEST" ]; then
   log "$BRANCH: no deploy target in $(basename "$CONF"), skipping"
+  echo "$RESULT skipped"
   exit 0
 fi
 ENV_NAME="$(conf_map ENV_NAME "$BRANCH")"; ENV_NAME="${ENV_NAME:-$BRANCH}"
@@ -51,3 +59,4 @@ profile_deploy "$BRANCH" "$DEST" "$ENV_NAME"
 echo "============================================"
 log "Deployed $BRANCH -> $ENV_NAME"
 echo "============================================"
+echo "$RESULT ok"

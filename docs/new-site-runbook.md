@@ -47,7 +47,7 @@ live. Three layers: **code** (runtime), **droplet** (infra), **delivery** (this 
 ## 1. Droplet — base (once per box)
 ```bash
 # on a fresh Ubuntu 24.04 droplet, as root. Pin the ref — do not track main:
-DEPLOY_KIT_REF=v1.1 bash -c 'curl -fsSL https://raw.githubusercontent.com/vinnyrags/deploy-kit/v1.1/provision/provision-base.sh | bash -s 8.4'
+DEPLOY_KIT_REF=v1.5 bash -c 'curl -fsSL https://raw.githubusercontent.com/vinnyrags/deploy-kit/v1.5/provision/provision-base.sh | bash -s 8.4'
 ```
 Installs nginx + php-fpm + mariadb + node + composer + wp-cli, the cache dir + drop-default
 vhost, the droplet-level `fastcgi_cache_key`, `harden.sh`, and deploy-kit at `/opt/deploy-kit`.
@@ -121,9 +121,43 @@ any origin cert, including self-signed.
   via the kit hook.
 - **`wp core install`** (fresh) or import the DB.
 - Verify: staging + prod 200, `X-FastCGI-Cache` header present, deploy log clean.
+- **Password-gated site?** Set `GATED=1` in `/etc/deploy-kit/<slug>.conf`. Without it the
+  smoke test and `verify-site.sh` read the gate's 401 as a broken site; with it they expect
+  the 401, assert the gate is never served from cache, and probe the cache on `/robots.txt`
+  instead of the homepage (so the gate must let `robots.txt` through).
+- **CI only goes red on a failed deploy with workflow `@v2` + droplet kit ≥ `v1.5`.** git
+  ignores the post-receive hook's exit status, so on `@v1` a failed build or smoke test still
+  shows a green run. New sites should call `deploy-reusable.yml@v2`.
 
 ## Conventions (new sites)
 - Staging = `staging.<domain>` at `/var/www/staging.<domain>/public`.
 - Cache: zone `<SLUG>` / dir `fastcgi-<slug>` (+ `-staging`); skip-maps suffix `<slug>`.
 - DBs: `<slug>_prod` / `<slug>_stg`. Bare repo: `/var/repo/<slug>.git`.
 - Default profile `mythus-ix`, `REDIS=0` (FastCGI page cache only, matching View/MBF/CA).
+
+## Deferred platform candidates — read before building the next site
+
+Things that came up on 3 Summers of Lincoln (launched 2026-09-30) and were judged **not yet
+worth lifting into the platform**. Each is solved inside 3SOL's child theme today. If the next
+site needs one, lift it then, from 3SOL's version, rather than rebuilding it.
+
+- **Site-wide password gate → arthouse-kit.** `three-summers-of-lincoln`
+  `src/Providers/Gate/GateProvider.php`. Deferred because 3SOL is the only gated site. It
+  carries three launch-day fixes a rebuild would likely miss: it closes the REST API to
+  anonymous callers (the gate itself lets JSON requests through), it sends `no-store` on every
+  page served past the gate (otherwise the FastCGI cache hands the first unlocked page to every
+  anonymous visitor), and it lets `robots.txt` through. Lift it when a second gated site
+  appears — and set `GATED=1` in that site's conf.
+- **WebP sub-sizes → IX.** 3SOL's `ThemeProvider::webpSubSizes()` maps PNG/JPEG → WebP via
+  `image_editor_output_format`. Cut the gate's hero from ~12 MB to under 1 MB. Deferred
+  because on an existing site it only helps new uploads, and regenerating old ones converts the
+  *full-size* file too, which drops the srcset from any block still pointing at the old
+  `.png`/`.jpg` until the markup is repointed (3SOL RUNBOOK trap 26). Cheap to adopt on a
+  **new** site from day one; costly to retrofit.
+- **Editor stylesheet cache-busting → IX.** 3SOL's `ThemeProvider::versionEditorStyles()`
+  appends `filemtime` to `add_editor_style()` URLs, which TinyMCE otherwise versions only by
+  its own release — a year of staleness behind `immutable`. Open on every other Mythus/IX site
+  behind a CDN; lifting it is a satis release plus a composer update per site.
+- **Per-site extra no-cache cookies in the cache-map template → not planned.** Considered for
+  the gate's cookie and rejected: the app that varies a response should mark it `no-store`, and
+  `verify-site.sh` now fails if `fastcgi_ignore_headers` would stop nginx honoring that.

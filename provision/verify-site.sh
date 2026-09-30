@@ -26,6 +26,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# GATED=1 in the site conf: the site answers anonymous visitors with a password
+# gate (401). Read in a subshell so nothing else in the conf leaks into this run.
+SITE_CONF="/etc/deploy-kit/${SLUG}.conf"
+GATED=0
+[ -r "$SITE_CONF" ] && GATED="$( . "$SITE_CONF" >/dev/null 2>&1; echo "${GATED:-0}" )"
+
 PASS=0; FAIL=0; SKIP=0
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; [ -n "${2:-}" ] && printf '        %s\n' "$2"; FAIL=$((FAIL+1)); }
@@ -68,6 +74,17 @@ check_env() { # check_env <host> <docroot> <label>
     bad "droplet-level fastcgi_cache_key present" "nginx -t PASSES without it; site would serve one page for all URLs"
   fi
 
+  # Pages that vary per visitor stay out of the shared cache by sending
+  # `Cache-Control: private, no-store` — a password gate's unlocked pages are the
+  # case that bit (3SOL, 2026-09-30: the first unlock was served to every
+  # anonymous visitor). fastcgi_ignore_headers would make nginx cache them anyway,
+  # silently.
+  if grep -rqs 'fastcgi_ignore_headers' /etc/nginx/; then
+    bad "nginx honors Cache-Control from PHP" "fastcgi_ignore_headers is set — no-store pages (gates, per-visitor responses) would be cached and served to everyone"
+  else
+    ok "nginx honors Cache-Control from PHP"
+  fi
+
   # These locations `deny all`, so they answer 403 even when the file is absent.
   [ "$(code "$host" /xmlrpc.php -X POST)" = 403 ]    && ok "/xmlrpc.php blocked"    || bad "/xmlrpc.php blocked"
   [ "$(code "$host" /wp/xmlrpc.php -X POST)" = 403 ] && ok "/wp/xmlrpc.php blocked" || bad "/wp/xmlrpc.php blocked" "the bare rule does not cover the /wp layout — this path answered 200 on AVFTB production"
@@ -99,11 +116,22 @@ check_env() { # check_env <host> <docroot> <label>
   # is forbidden" and every downstream check then reports something misleading.
   # Name the real problem instead.
   local hc; hc="$(code "$host" /)"
-  case "$hc" in
-    200|301|302) ok "homepage responds (${hc})" ;;
-    403) bad "homepage responds" "403 — code is deployed but nothing is served. Is index.php present in the docroot?" ;;
-    *)   bad "homepage responds" "got ${hc}" ;;
-  esac
+  if [ "$GATED" = 1 ]; then
+    # A gated site must answer anonymous visitors with the gate — a 200 here is
+    # the gate off or bypassed, which is the failure worth catching.
+    case "$hc" in
+      401) ok "gate answers anonymous visitors (401)" ;;
+      200) bad "gate answers anonymous visitors" "200 — the site is being served ungated" ;;
+      403) bad "gate answers anonymous visitors" "403 — code is deployed but nothing is served. Is index.php present in the docroot?" ;;
+      *)   bad "gate answers anonymous visitors" "got ${hc}, expected 401" ;;
+    esac
+  else
+    case "$hc" in
+      200|301|302) ok "homepage responds (${hc})" ;;
+      403) bad "homepage responds" "403 — code is deployed but nothing is served. Is index.php present in the docroot?" ;;
+      *)   bad "homepage responds" "got ${hc}" ;;
+    esac
+  fi
   if ! (cd "$root" && $WP core is-installed >/dev/null 2>&1); then
     skip "WordPress checks (core deployed, not installed)"
     bad "installer is NOT publicly reachable" "an uninstalled WordPress serves /wp/wp-admin/install.php to anyone — complete the install or take the site offline"
@@ -155,14 +183,30 @@ check_env() { # check_env <host> <docroot> <label>
     skip "dashboard reachability (no administrator account)"
   fi
 
+  # A gated homepage is a 401 and never cached, so it cannot show whether the
+  # cache is engaged. Two things instead: the gate itself must not come from
+  # cache, and /robots.txt — a public 200 rendered by PHP — proves the cache
+  # works. (Not a 404: WordPress sends no-store on every 404, and the vhost's
+  # X-FastCGI-Cache add_header does not apply to 404 responses at all.)
+  local probe=/
+  if [ "$GATED" = 1 ]; then
+    fetch "$host" / -o /dev/null
+    local gs; gs="$(fetch "$host" / -o /dev/null -D - | grep -i '^x-fastcgi-cache:' | tr -d '\r' | awk '{print $2}')"
+    [ "$gs" = HIT ] && bad "gate page is never served from cache" "X-FastCGI-Cache: HIT on an anonymous request to /" \
+                    || ok "gate page is never served from cache"
+    probe=/robots.txt
+  fi
+
   # Micro-cache actually engaged. Query strings are in the skip-map, so use a
   # bare path and prime it first.
-  fetch "$host" / -o /dev/null
-  local cs; cs="$(fetch "$host" / -o /dev/null -D - | grep -i '^x-fastcgi-cache:' | tr -d '\r' | awk '{print $2}')"
+  fetch "$host" "$probe" -o /dev/null
+  local cs; cs="$(fetch "$host" "$probe" -o /dev/null -D - | grep -i '^x-fastcgi-cache:' | tr -d '\r' | awk '{print $2}')"
   case "$cs" in
     HIT|MISS|BYPASS|EXPIRED) ok "FastCGI micro-cache active (${cs})" ;;
     "") if [ "$hc" = 403 ]; then
           skip "FastCGI micro-cache (nothing is served, see above)"
+        elif [ "$GATED" = 1 ]; then
+          bad "FastCGI micro-cache active" "no X-FastCGI-Cache header on ${probe} — is the gate letting robots.txt through?"
         else
           bad "FastCGI micro-cache active" "no X-FastCGI-Cache header — page caching is not engaged"
         fi ;;
