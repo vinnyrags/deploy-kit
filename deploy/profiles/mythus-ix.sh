@@ -41,6 +41,7 @@ profile_deploy() {
   # Clear caches AFTER code is in place: php-fpm (OPcache) first, then the nginx
   # FastCGI page cache + Redis object cache so they repopulate from fresh code.
   restart_fpm
+  flush_rewrites "$wp_path"
   flush_fastcgi "$(conf_map CACHE_DIR "$branch")"
   flush_redis "$wp_path"
 

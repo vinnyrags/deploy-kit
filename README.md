@@ -40,7 +40,7 @@ on: { push: { branches: [develop, main] } }
 concurrency: deploy-${{ github.ref_name }}
 jobs:
   deploy:
-    uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v1
+    uses: vinnyrags/deploy-kit/.github/workflows/deploy-reusable.yml@v2   # needs the droplet kit at >= v1.5
     with:  { bare_repo: aviewfromthebridge.git }
     secrets:
       DEPLOY_SSH_KEY:      ${{ secrets.DEPLOY_SSH_KEY }}
@@ -53,7 +53,7 @@ jobs:
 ```bash
 # 1. cp config/site.conf.example -> /etc/deploy-kit/<site>.conf and edit
 # 2. install kit + wire the bare repo's post-receive:
-sudo bash provision/setup-droplet.sh <site> /etc/deploy-kit/<site>.conf v1
+sudo bash provision/setup-droplet.sh <site> /etc/deploy-kit/<site>.conf v1.6
 ```
 The old hook is backed up to `*.bak.*`. `deploy-kit` is pinned per droplet at a tag,
 so an update to this repo is a **deliberate roll** (`checkout` a new tag), never an
@@ -78,7 +78,8 @@ works if the kit is ever unavailable.
 |---|---|---|---|
 | View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache; kit pinned at `b3e057c` |
 | 3 Summers of Lincoln | `mythus-ix` | 8.4 | first site provisioned wholly by this kit (2026-09-28); pinned `v1.1` |
-| vincentragosta.io, ellenharvey | `mythus-ix` | 8.4 | same recipe |
+| vincentragosta.io, heywilma-connect | `mythus-ix` | 8.4 | onboarded 2026-10-15 (same droplet, kit pinned `v1.6`); deploys via the `@v2` workflow. heywilma is develop-only (demo) |
+| ellenharvey | `mythus-ix` | 8.4 | own droplet |
 | Shucked | `classic` | 8.2 | no build; FastCGI micro-cache added 2026-08-19 |
 | itzenzo.tv | `nextjs` | — | PM2/systemd |
 

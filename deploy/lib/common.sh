@@ -37,6 +37,14 @@ flush_redis() {
   wp cache flush --path="$1" --allow-root --quiet 2>/dev/null || true
 }
 
+# Rewrite rules live in the database, not the code: a deploy that changes a post
+# type's or taxonomy's rewrite slug leaves the old rules in place, and the new URLs
+# 404 with no error anywhere. Regenerating them is cheap, so do it every deploy.
+# Soft flush — rules only; nginx has no .htaccess to write.
+flush_rewrites() {
+  wp rewrite flush --path="$1" --allow-root --quiet 2>/dev/null || true
+}
+
 # Reload/restart php-fpm to drop OPcache. FPM_ACTION=reload|restart, PHP_VER=8.x.
 restart_fpm() {
   local action="${FPM_ACTION:-reload}" ver="${PHP_VER:-8.3}"
