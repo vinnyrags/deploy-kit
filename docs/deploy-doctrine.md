@@ -93,6 +93,14 @@ Untracked by design, and safe to change on the droplet:
 
 Everything else lives in git.
 
+## Each environment keeps its own git index
+
+Since `v1.8` the kit checks each branch out with its own index (`index.<branch>` in the bare repo).
+With one shared index, a file deleted from the repo was removed from the environment that deployed
+first and silently kept by the other. If you ever check a work tree out by hand, pass the same
+`GIT_INDEX_FILE` the kit uses (`deploy/lib/common.sh`, `branch_index`) — a bare
+`git --work-tree=… checkout` writes the shared index and re-creates the drift.
+
 ## Verifying a deploy actually landed
 
 Two things routinely produce a false negative, and both bit on 2026-08-24:

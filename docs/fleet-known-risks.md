@@ -115,6 +115,27 @@ bugs that are already fixed.
 through `v1.2`, so a roll cannot alter deploy behaviour — but it is still an unrequested change
 to a client's production box.
 
+## Risk 4 — deleted files linger in one environment, and repo docs are served
+
+Found 2026-10-15 on the personal droplet and fixed there; **the closed sites still carry it**.
+
+- **Shared git index (fixed in `v1.8`).** Staging and production check out from one bare repo, and
+  before `v1.8` they shared its single index. Whichever environment deployed second inherited the
+  first's record, so a file deleted from the repo stayed on disk in that environment forever. On the
+  personal droplet that left a retired app's SQLite database (with a customer record), its source,
+  old one-off scripts and since-deleted docs in the production docroot — publicly served where no
+  rule blocked the path. `v1.8` gives each deployed branch its own index; the first deploy after the
+  roll cannot see pre-existing leftovers, so list them once against the deployed tree
+  (`GIT_INDEX_FILE=<tmp> git read-tree <branch>` then `ls-files --others --exclude-standard`), review,
+  and quarantine — don't `git clean` a docroot (object-cache drop-ins and the like are untracked by design).
+- **Repo files in the docroot.** `v1.7`'s hardening snippet 404s `*.md`, `/Makefile` and `/docs/`.
+  Two closed sites still served `RUNBOOK.md` / `CLAUDE.md` at 200 on 2026-10-15, and their snippet
+  copies also predate the `wp-config*` deny (Risk 3).
+
+**Out of scope by decision (2026-10-15): these sites are closed.** If one is touched again: install
+the current snippet (backup → `nginx -t` → reload → before/after URL diff), roll the pin to `v1.8`,
+and quarantine leftovers as above.
+
 ## Not a risk, despite appearances
 
 - **`install_plugins: NO` for an administrator.** `DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT`
