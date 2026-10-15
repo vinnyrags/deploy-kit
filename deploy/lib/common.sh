@@ -11,17 +11,31 @@ conf_map() {
   printf '%s' "${_m[$2]:-}"
 }
 
+# One index per deployed branch. The bare repo's own index is shared by every work
+# tree checked out from it, so with staging (develop) and production (main) on one
+# bare repo, whichever deploys second inherits the first's record of what is already
+# in place: a file deleted from the repo is removed from the first environment and
+# silently left behind in the second, forever. That is how a retired bot's database,
+# old one-off scripts and since-deleted docs survived in a production docroot
+# (found 2026-10-15). A per-branch index gives each work tree its own record, so a
+# deletion reaches every environment. The first deploy after this change starts from
+# an empty index: it writes every tracked file but cannot know what was left behind
+# before it — clear pre-existing leftovers once, by hand.
+branch_index() { printf '%s/index.%s' "$BARE" "$(printf '%s' "$1" | tr '/' '_')"; }
+
 # Check out a branch from the bare repo ($BARE) into a work tree, creating it.
 checkout_tree() {
   local branch="$1" dest="$2"
   mkdir -p "$dest"
-  git --git-dir="$BARE" --work-tree="$dest" checkout -f "$branch"
+  GIT_INDEX_FILE="$(branch_index "$branch")" git --git-dir="$BARE" --work-tree="$dest" checkout -f "$branch"
 }
 
-# git clean, scoped, from the bare repo into a work tree (never fatal).
+# git clean, scoped, from the bare repo into a work tree (never fatal). Must use the
+# same per-branch index as checkout_tree, or it would judge this work tree against
+# another environment's record.
 clean_tree() {
   local branch="$1" dest="$2" path="$3"
-  git --git-dir="$BARE" --work-tree="$dest" clean -fd -- "$path" 2>/dev/null || true
+  GIT_INDEX_FILE="$(branch_index "$branch")" git --git-dir="$BARE" --work-tree="$dest" clean -fd -- "$path" 2>/dev/null || true
 }
 
 preserve() { cp "$1" "$2" 2>/dev/null || true; }   # preserve $1 to backup $2
