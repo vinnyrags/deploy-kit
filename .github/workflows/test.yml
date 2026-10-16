@@ -1,0 +1,19 @@
+name: test
+
+# Kit self-tests: shellcheck on the deploy scripts, bats on the release logic.
+# bats runs as root — the release code chowns to root, as it does on a droplet.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install bats + shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats shellcheck
+      - name: shellcheck (errors only)
+        run: shellcheck -S error deploy/deploy.sh deploy/lib/*.sh deploy/profiles/*.sh bin/rollback.sh provision/backup.sh provision/wp-cron.sh
+      - name: bats
+        run: sudo -E bats test/

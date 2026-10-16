@@ -37,6 +37,8 @@ fi
 # shellcheck disable=SC1090
 source "$KIT/deploy/lib/common.sh"
 # shellcheck disable=SC1090
+source "$KIT/deploy/lib/releases.sh"
+# shellcheck disable=SC1090
 source "$CONF"                                   # -> PROFILE, DEPLOY_DIR[], etc.
 : "${PROFILE:?site conf must set PROFILE}"
 # shellcheck disable=SC1090
@@ -54,7 +56,13 @@ echo "============================================"
 log "Deploying $BRANCH -> $ENV_NAME  ($DEST)  @ ${NEWREV:0:8}"
 echo "============================================"
 
-profile_deploy "$BRANCH" "$DEST" "$ENV_NAME"
+LAYOUT_B="$(conf_map LAYOUT "$BRANCH" 2>/dev/null || true)"
+if [ "${LAYOUT_B:-inplace}" = releases ]; then
+  declare -F profile_build >/dev/null || { log "profile $PROFILE does not support LAYOUT=releases"; exit 1; }
+  release_deploy "$BRANCH" "$DEST" "$ENV_NAME" "${NEWREV:-$(git --git-dir="$BARE" rev-parse "$BRANCH")}"
+else
+  profile_deploy "$BRANCH" "$DEST" "$ENV_NAME"
+fi
 
 echo "============================================"
 log "Deployed $BRANCH -> $ENV_NAME"

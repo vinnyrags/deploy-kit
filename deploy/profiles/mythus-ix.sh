@@ -6,18 +6,14 @@
 # Site conf must define: THEME (child theme dir), PHP_VER, FPM_ACTION (reload|restart),
 # REDIS (0|1), and the maps DEPLOY_DIR[branch], ENV_NAME[branch], CACHE_DIR[branch].
 
-profile_deploy() {
-  local branch="$1" dest="$2" env="$3"
-  local wp_path="$dest/wp"
+# The build, against any tree: composer (root + mythus + ix + child) and the npm
+# builds. Used by both layouts — in place (into the live docroot) and releases
+# (into a new release dir that is not yet live).
+profile_build() {
+  local dest="$1"
   local child="$dest/wp-content/themes/${THEME:?THEME required for mythus-ix}"
   local ix="$dest/wp-content/themes/ix"
   local mythus="$dest/wp-content/mu-plugins/mythus"
-  local envbak="/tmp/${THEME}-env-${env}.php"
-
-  preserve "$dest/wp-config-env.php" "$envbak"      # env config is not in the repo
-  checkout_tree "$branch" "$dest"
-  clean_tree "$branch" "$dest" "wp-content/themes/${THEME}/src"
-  restore "$dest/wp-config-env.php" "$envbak"
   # ACF Pro + satis credentials. Composer's real home is /root/.config/composer;
   # /root/.composer-auth.json is a non-standard name composer never reads on its
   # own, and it is where three older droplets keep theirs. Try the correct path
@@ -36,15 +32,34 @@ profile_deploy() {
   log "npm build (ix + child)…"
   [ -f "$ix/package.json" ]    && ( cd "$ix";    npm install --no-audit --no-fund; npm run build )
   [ -f "$child/package.json" ] && ( cd "$child"; npm install --no-audit --no-fund; npm run build )
+  return 0
+}
 
+# Make code that is now in place live: php-fpm (OPcache) first, then the nginx
+# FastCGI page cache + Redis object cache so they repopulate from fresh code.
+profile_activate() {
+  local branch="$1" dest="$2"
+  restart_fpm
+  flush_rewrites "$dest/wp"
+  flush_fastcgi "$(conf_map CACHE_DIR "$branch")"
+  flush_redis "$dest/wp"
+}
+
+# Shared, mutable paths a release links to instead of carrying (LAYOUT=releases).
+profile_shared_paths() { printf '%s\n' wp-config-env.php wp-content/uploads wp-content/debug.log; }
+
+# LAYOUT=inplace (default): check out straight into the live docroot.
+profile_deploy() {
+  local branch="$1" dest="$2" env="$3"
+  local envbak="/tmp/${THEME}-env-${env}.php"
+
+  preserve "$dest/wp-config-env.php" "$envbak"      # env config is not in the repo
+  checkout_tree "$branch" "$dest"
+  clean_tree "$branch" "$dest" "wp-content/themes/${THEME}/src"
+  restore "$dest/wp-config-env.php" "$envbak"
+  profile_build "$dest"
   own "$dest"
   lock_secrets "$dest"
-  # Clear caches AFTER code is in place: php-fpm (OPcache) first, then the nginx
-  # FastCGI page cache + Redis object cache so they repopulate from fresh code.
-  restart_fpm
-  flush_rewrites "$wp_path"
-  flush_fastcgi "$(conf_map CACHE_DIR "$branch")"
-  flush_redis "$wp_path"
-
+  profile_activate "$branch" "$dest"
   smoke_test "$dest" "$env"
 }
