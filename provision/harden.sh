@@ -125,6 +125,10 @@ else
     echo "# re-run harden.sh to refresh. Source: cloudflare.com/ips-v4 and /ips-v6."
     echo "geo \$realip_remote_addr \$from_cloudflare {"
     echo "    default 0;"
+    echo "    # Loopback: deploy-kit's smoke test and on-box checks reach the site on"
+    echo "    # 127.0.0.1 with --resolve. Without these, cloudflare-only.conf fails every deploy."
+    echo "    127.0.0.0/8 1;"
+    echo "    ::1 1;"
     printf '%s\n' "$CF4" | grep -E '^[0-9.]+/[0-9]+$'       | sed 's/^/    /; s/$/ 1;/'
     printf '%s\n' "$CF6" | grep -E '^[0-9a-fA-F:]+/[0-9]+$' | sed 's/^/    /; s/$/ 1;/'
     echo "}"
