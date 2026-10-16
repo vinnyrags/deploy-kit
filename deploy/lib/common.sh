@@ -43,6 +43,18 @@ restore()  { cp "$2" "$1" 2>/dev/null || true; }   # restore backup $2 to $1
 
 own() { chown -R "${OWNER:-www-data:www-data}" "$1"; }
 
+# Secret-bearing files in a docroot: readable by PHP (group www-data), writable by
+# nobody but root, invisible to other accounts. Runs AFTER own(), whose recursive
+# chown would otherwise hand them back to www-data — a PHP RCE could then rewrite
+# the DB credentials or salts rather than merely read them.
+lock_secrets() {
+  local f
+  for f in "$1/wp-config-env.php" "$1/auth.json"; do
+    [ -f "$f" ] && chown root:www-data "$f" && chmod 640 "$f"
+  done
+  return 0
+}
+
 # --- cache / php-fpm ------------------------------------------------------------
 flush_fastcgi() { [ -n "${1:-}" ] && rm -rf "$1"/* 2>/dev/null || true; }
 

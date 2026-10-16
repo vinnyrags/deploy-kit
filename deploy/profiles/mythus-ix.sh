@@ -38,6 +38,7 @@ profile_deploy() {
   [ -f "$child/package.json" ] && ( cd "$child"; npm install --no-audit --no-fund; npm run build )
 
   own "$dest"
+  lock_secrets "$dest"
   # Clear caches AFTER code is in place: php-fpm (OPcache) first, then the nginx
   # FastCGI page cache + Redis object cache so they repopulate from fresh code.
   restart_fpm
