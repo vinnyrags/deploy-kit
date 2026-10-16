@@ -15,7 +15,7 @@ edit locally  →  commit  →  push origin develop  →  staging deploys  →  
 ```
 
 `.github/workflows/deploy.yml` in each site is a thin caller into
-`deploy-kit/.github/workflows/deploy-reusable.yml@v1`. That workflow adds a
+`deploy-kit/.github/workflows/deploy-reusable.yml@v2` (`@v1` on droplets pinned below v1.5). That workflow adds a
 `droplet` remote and pushes the ref to the bare repo under `/var/repo`. The
 droplet's post-receive hook then runs `deploy-kit/deploy/deploy.sh`, which does
 the stack-specific build and cache flush.

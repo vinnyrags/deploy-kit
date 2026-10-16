@@ -100,6 +100,12 @@ Sites provisioned fresh by `new-site.sh` get a proper symlink and are not affect
 
 - **30s FastCGI microcache.** `fastcgi_cache_valid 200 30s;` `404 5m;` — TTL is the
   correctness floor; freshness is bounded at 30s for anonymous visitors.
+- **Serve stale, lock misses** (v1.9). `include snippets/wp-microcache.conf;` in the PHP
+  location: expired entries are served while one background request refreshes them, concurrent
+  misses wait on a lock instead of stampeding PHP-FPM, and a PHP-FPM outage serves the last good
+  page (`STALE`) for the zone's `inactive=` window. Without it a 30s cache sends a render to PHP
+  every 30s per page and goes down with PHP. Opt-in per vhost; on vincentragosta.io since
+  2026-10-16, proven with php-fpm stopped.
 - **Never cache 3xx.** No `fastcgi_cache_valid 301 302` — a cached redirect is the
   `ERR_TOO_MANY_REDIRECTS` footgun.
 - **Bypass for anyone who must see live content:** logged-in / comment / post-password
@@ -153,6 +159,7 @@ Inside `location ~ \.php$ { … }` (after the fastcgi_pass / params):
         fastcgi_cache         <SLUG>;
         fastcgi_cache_valid   200 30s;
         fastcgi_cache_valid   404 5m;
+        include               snippets/wp-microcache.conf;   # v1.9+
         add_header            X-FastCGI-Cache $upstream_cache_status;
 ```
 

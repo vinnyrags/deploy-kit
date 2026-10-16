@@ -7,7 +7,8 @@ updated: 2026-08-20
 
 Zone-level Cloudflare settings that have bitten us, and how to inspect or change them.
 Applies to every **proxied** zone. Sites that are DNS-only at Cloudflare (Shucked) or not
-on Cloudflare at all (CBA, vincentragosta.io, itzenzo.tv) are unaffected by everything here.
+on Cloudflare at all (CBA, itzenzo.tv) are unaffected by everything here. vincentragosta.io has
+been proxied since 2026-08-28.
 
 ## Encrypted ClientHello (ECH) — disabled fleet-wide 2026-08-20
 
@@ -116,7 +117,20 @@ site keys on the edge IP and buckets every visitor into ~20 shared keys — thro
 while barely inconveniencing an attacker. That is why `harden.sh` installs both in one run and
 why they must not be split. See [security-hardening.md](security-hardening.md).
 
-## Origin bypass — still open
+## Origin bypass — closeable per vhost (v1.9.2); closed on vincentragosta.io 2026-10-16
+
+**The fix, opt-in per vhost:** `include snippets/cloudflare-only.conf;` in the **443** server
+block of a **proxied** host. It returns 444 unless `$from_cloudflare` is set — a `geo` on
+`$realip_remote_addr` (the TCP peer, since real-ip has already rewritten `$remote_addr`) that
+`harden.sh` generates from the same live ranges as real-ip, plus loopback so deploy smoke tests
+pass. Per vhost rather than ufw, so grey-cloud hosts on the same IP (a satis registry, a
+non-proxied app) keep working; port 80 stays open for certbot. Re-running `harden.sh` refreshes
+the ranges, which answers the "ranges drift" objection below. Remaining limit: another Cloudflare
+customer can route to the IP through their own zone — per-hostname Authenticated Origin Pulls
+closes that.
+
+**Not applied to the ARTHOUSE droplets** (closed engagements — Marc's call). There, as of
+2026-08-25:
 
 Both droplets answer on their raw IP, so Cloudflare can be skipped entirely:
 

@@ -23,12 +23,17 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    - `nextjs` — `npm ci` + build + PM2/systemd restart (e.g. itzenzo.tv)
 
 3. **nginx templates** (`nginx/`) — the canonical WP FastCGI micro-cache (200+404 only,
-   never 301/302) as an http-context include + a per-site vhost template.
+   never 301/302) as an http-context include + a per-site vhost template, plus snippets
+   that `harden.sh` installs: `wp-hardening` (always included), and two opt-in per vhost —
+   `wp-microcache` (serve stale on PHP failure, stampede lock) and `cloudflare-only`
+   (444 for anything not via Cloudflare or loopback; proxied hosts only).
 
 4. **Droplet provisioning** (`provision/`, `bin/`) — bring a fresh droplet to the
    canonical spec (`provision-base.sh`), stand up a site's infra (`new-site.sh`:
    DBs + web roots + bare repo + vhosts + cache + wp-config-env), and one-command
-   GitHub wiring (`bin/onboard.sh`: deploy key + secrets + caller workflow). See
+   GitHub wiring (`bin/onboard.sh`: deploy key + secrets + caller workflow). Ongoing
+   ops: `backup.sh` (nightly restic → S3/B2 of DB + uploads, systemd timer, one
+   `BACKUP-RESULT` line) and `wp-cron.sh` (WP-Cron from a per-minute timer as www-data). See
    **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end lifecycle.
 
 ## Consume it (per site)
@@ -66,7 +71,7 @@ works if the kit is ever unavailable.
 |---|---|
 | [docs/new-site-runbook.md](docs/new-site-runbook.md) | End-to-end lifecycle for standing up a new site |
 | [docs/droplet-cache-convention.md](docs/droplet-cache-convention.md) | The canonical FastCGI micro-cache, plus the `sites-enabled` drift trap |
-| [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), real-IP restoration, and the open origin-bypass gap |
+| [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), real-IP restoration, and closing origin bypass per vhost |
 | [docs/security-hardening.md](docs/security-hardening.md) | `harden.sh` — what it installs, what is load-bearing, and what it does not stop |
 | [docs/nginx-5xx-triage-runbook.md](docs/nginx-5xx-triage-runbook.md) | Triaging origin 5xx |
 | [docs/fleet-known-risks.md](docs/fleet-known-risks.md) | Dormant problems on closed-engagement droplets, and whose call it is to fix them |
@@ -78,7 +83,7 @@ works if the kit is ever unavailable.
 |---|---|---|---|
 | View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache; kit pinned at `b3e057c` |
 | 3 Summers of Lincoln | `mythus-ix` | 8.4 | first site provisioned wholly by this kit (2026-09-28); pinned `v1.1` |
-| vincentragosta.io, heywilma-connect | `mythus-ix` | 8.4 | onboarded 2026-10-15 (same droplet, kit pinned `v1.8`); deploys via the `@v2` workflow. heywilma is develop-only (demo) |
+| vincentragosta.io, heywilma-connect | `mythus-ix` | 8.4 | onboarded 2026-10-15 (same droplet, kit pinned `v1.9.3`); deploys via the `@v2` workflow. vincentragosta.io is Cloudflare-proxied with `cloudflare-only` + `wp-microcache`, nightly B2 backups and the WP-Cron timer (2026-10-16). heywilma is develop-only (demo) |
 | ellenharvey | `mythus-ix` | 8.4 | own droplet |
 | Shucked | `classic` | 8.2 | no build; FastCGI micro-cache added 2026-08-19 |
 | itzenzo.tv | `nextjs` | — | PM2/systemd |
