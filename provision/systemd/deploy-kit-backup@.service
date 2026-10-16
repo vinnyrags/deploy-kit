@@ -1,0 +1,13 @@
+# deploy-kit — one nightly backup run for site %i (conf: /etc/deploy-kit/%i.conf).
+# Installed by provision/backup.sh --install. A failed run leaves this unit in the
+# "failed" state: `systemctl status deploy-kit-backup@%i` / `journalctl -u ...`.
+[Unit]
+Description=deploy-kit backup (%i)
+Wants=network-online.target
+After=network-online.target mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/deploy-kit/provision/backup.sh --run /etc/deploy-kit/%i.conf
+Nice=10
+IOSchedulingClass=idle

@@ -28,6 +28,11 @@ server {
     gzip on; gzip_vary on; gzip_proxied any; gzip_comp_level 6;
     gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss image/svg+xml;
 
+    # Static files. `immutable` only where every URL is versioned (?ver= from the
+    # enqueue, or a core/plugin/theme release): code paths. Uploads are not versioned
+    # — a file replaced at the same URL would stay stale in browsers for the whole
+    # max-age — so they get a plain 30-day cache.
+    location ~* ^/(?:wp/)?wp-content/uploads/.*\.(jpg|jpeg|png|webp|avif|svg|gif|ico|pdf|mp4|woff|woff2)$ { expires 30d; add_header Cache-Control "public"; access_log off; }
     location ~* \.(jpg|jpeg|png|webp|svg|gif|ico|css|js|woff|woff2|ttf|eot)$ { expires 1y; add_header Cache-Control "public, immutable"; access_log off; }
     location ~ /\. { deny all; access_log off; log_not_found off; }
     # xmlrpc is blocked by snippets/wp-hardening.conf, included above. It used to be an
@@ -53,6 +58,7 @@ server {
         fastcgi_cache {{CACHE_ZONE}};
         fastcgi_cache_valid 200 30s;   # micro-cache; NEVER 301/302
         fastcgi_cache_valid 404 5m;
+        include snippets/wp-microcache.conf;   # stale-on-error + stampede lock
         add_header X-FastCGI-Cache $upstream_cache_status;
     }
 }

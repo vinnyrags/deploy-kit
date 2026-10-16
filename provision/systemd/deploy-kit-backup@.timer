@@ -1,0 +1,12 @@
+# deploy-kit — nightly at ~03:30 UTC (23:30 New York), off-peak. Persistent=true
+# runs a missed backup at the next boot if the droplet was down at that time.
+[Unit]
+Description=deploy-kit nightly backup (%i)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

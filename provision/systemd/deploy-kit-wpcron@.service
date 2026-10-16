@@ -1,0 +1,10 @@
+# deploy-kit — run due WP-Cron events. Instance is "<site>:<branch>", e.g.
+# deploy-kit-wpcron@vincentragosta:main. Installed by provision/wp-cron.sh --install.
+[Unit]
+Description=deploy-kit WP-Cron (%i)
+After=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'i="%i"; exec /opt/deploy-kit/provision/wp-cron.sh --run "/etc/deploy-kit/$${i%%%%:*}.conf" "$${i#*:}"'
+Nice=5

@@ -1,0 +1,11 @@
+# deploy-kit — every minute, like WP-Cron's own cadence on a busy uncached site.
+[Unit]
+Description=deploy-kit WP-Cron every minute (%i)
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
