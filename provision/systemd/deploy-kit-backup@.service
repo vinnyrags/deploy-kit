@@ -8,6 +8,11 @@ After=network-online.target mariadb.service
 
 [Service]
 Type=oneshot
+# systemd sets no $HOME, and without a cache dir restic re-downloads the repository
+# index from the bucket on every run — burning the free daily download/transaction
+# allowance (and with $0 caps, eventually failing the backup).
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
+CacheDirectory=restic
 ExecStart=/opt/deploy-kit/provision/backup.sh --run /etc/deploy-kit/%i.conf
 Nice=10
 IOSchedulingClass=idle
