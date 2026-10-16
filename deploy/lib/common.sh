@@ -6,7 +6,13 @@ log() { echo ">> $*"; }
 
 # conf_map ARRAY_NAME KEY  ->  value of an associative array defined in the site conf.
 # e.g. conf_map DEPLOY_DIR main
+#
+# An array the conf never declares reads as empty. Without the guard, set -u aborts
+# on the nameref and takes the whole caller with it, even from inside `$(… || true)`:
+# when LAYOUT arrived (7964eda) every conf without one failed its next deploy
+# (heywilma-connect, 2026-10-16), before the profile had printed anything.
 conf_map() {
+  declare -p "$1" >/dev/null 2>&1 || return 0
   local -n _m="$1"
   printf '%s' "${_m[$2]:-}"
 }

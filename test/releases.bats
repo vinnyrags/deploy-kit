@@ -117,7 +117,16 @@ live() { basename "$(readlink -f "$BASE/current")"; }
   [ ! -e "$BASE/current" ]
 }
 
-@test "conf_map on an undeclared LAYOUT map is empty, not an error, under set -u" {
-  run bash -c 'set -u; source "'"$KIT"'/deploy/lib/common.sh"; v="$(conf_map LAYOUT develop 2>/dev/null || true)"; echo "[$v]"'
+@test "conf_map on an undeclared LAYOUT map is empty, not an error, under deploy.sh's set -euo pipefail" {
+  # set -e matters: with only -u the aborted subshell didn't take the caller down,
+  # so this passed while every conf without LAYOUT failed to deploy (2026-10-16).
+  run bash -c 'set -euo pipefail; source "'"$KIT"'/deploy/lib/common.sh"; v="$(conf_map LAYOUT develop 2>/dev/null || true)"; echo "[$v]"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "[]" ]
+}
+
+@test "conf_map on any undeclared map is empty without a fallback (CACHE_DIR in the profiles)" {
+  run bash -c 'set -euo pipefail; source "'"$KIT"'/deploy/lib/common.sh"; v="$(conf_map CACHE_DIR develop)"; echo "[$v]"'
+  [ "$status" -eq 0 ]
   [ "$output" = "[]" ]
 }
