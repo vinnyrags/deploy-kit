@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-08-13
+updated: 2026-10-19
 ---
 
 # Droplet cache convention — WordPress on nginx (canonical)
@@ -12,11 +12,61 @@ droplet. Codified 2026-07-15 after a cross-property audit + deep dive concluded 
 same origin protection as long-TTL+purge exactly when traffic warrants it, without a
 purge plugin, purge-coverage risk, or cached redirects).
 
-New droplets/sites should be provisioned from this. Live sites already matching:
-**MF, AVFTB, CBA, Shucked** (all 30s microcache, no nginx-helper, no idle Redis).
-Shucked joined 2026-08-19 — the vhosts there are hand-written and certbot-managed, so
-the directives were inserted into the existing files rather than rendered from
-`nginx/vhost.conf.template`.
+New droplets/sites should be provisioned from this. Every production WordPress site in
+the fleet matches as of 2026-10-19 (30s microcache, no nginx-helper; Redis only where
+opted in). Hand-written, certbot-managed vhosts get the directives inserted into the
+existing files rather than rendered from `nginx/vhost.conf.template`. Exceptions are
+listed, with reasons, in the fleet-check sites file (see Enforcement).
+
+## The baseline — what every production site gets (2026-10-19)
+
+Written after a production site was found running with **no cache of any kind** — it
+was provisioned by hand, outside this kit, and nothing checked. On a small droplet that
+meant PHP workers shared with staging, scanner traffic booting full WordPress, and
+multi-second stalls for visitors. The convention existed; compliance did not.
+
+**Required on every WordPress production site we operate — no per-site decision needed:**
+
+1. **The 30s FastCGI micro-cache plus `snippets/wp-microcache.conf`** (rules below).
+2. **OPcache on** (the PHP default) and **static-asset expiry**: theme/plugin/core assets
+   `expires 30d` + `immutable` (always `?ver=`-versioned); `wp-content/uploads` `expires
+   30d` **without** `immutable` — uploads are not versioned, and a file replaced at the same
+   URL must refresh.
+3. **Origin protection, so the cache's misses don't queue behind other traffic:**
+   - **Separate PHP-FPM pools for production and staging** (own socket, own
+     `max_children`; staging `ondemand`). One shared pool lets a staging deploy, a test run
+     or bots on staging take workers from visitors. `provision/fpm-pools.sh` (new sites get
+     it from `new-site.sh`); `fpm-pools.sh --retire-default` removes `[www]` once unused.
+   - **Scanner traffic rejected in nginx before PHP** — empty User-Agent, dotfiles (except
+     `.well-known`), known probe paths (`/_ignition`, `*heapdump*`, `/actuator`, `/mcp`…),
+     `/vendor/` (the root Composer vendor is in the docroot), and missing
+     `.txt/.bak/.sql/.zip/…` answered 404 from disk. `nginx/scanner-block.snippet.conf`,
+     installed by `harden.sh` and inserted with `harden.sh --scanner-block`; the vhost
+     template carries it for new sites.
+   - **WP-Cron on a system timer**, not page traffic (`provision/wp-cron.sh`).
+   - **A PHP-FPM slow log** (`request_slowlog_timeout = 2s`) so the next "it's slow" has a
+     stack trace instead of a guess. Part of every pool `fpm-pools.sh` renders.
+
+**Opt-in, with the reason written in the site's RUNBOOK:**
+
+- **Redis object cache** — only where significant traffic cannot be page-cached: POST /
+  GraphQL, logged-in-heavy sites, WooCommerce. If staging gets it too, define
+  `WP_REDIS_DATABASE` and `WP_CACHE_KEY_SALT` *before* the drop-in — the other order
+  shares production's cache (it has happened).
+- **Staging page cache** — yes where staging is pre-launch verification of production
+  (ticketed show sites); no where staging is a content/review environment.
+
+**Not doing:** HTML caching at the Cloudflare edge (decided 2026-10-16 — free-plan TTL
+floor and a second cache to reason about). Cloudflare passes HTML through (`DYNAMIC`).
+
+**Enforcement — the part that was missing:**
+
+- `bin/fleet-cache-check.sh` fetches each production page twice with no query string and
+  fails unless the second is a `HIT` and every page has its own body (identical bodies =
+  the missing-`fastcgi_cache_key` collision). A documented `none` exception fails if a
+  cache appears. The sites file is kept **outside this repo** (it maps the fleet); lines
+  are `<host> <cache|none> <path>…`. Run it after any nginx change and as a periodic
+  fleet check; add every new site at launch — passing it is a go-live gate.
 
 ## Known gaps in this convention (verified 2026-08-19)
 

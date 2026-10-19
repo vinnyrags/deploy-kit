@@ -24,8 +24,9 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
 
 3. **nginx templates** (`nginx/`) — the canonical WP FastCGI micro-cache (200+404 only,
    never 301/302) as an http-context include + a per-site vhost template, plus snippets
-   that `harden.sh` installs: `wp-hardening` (always included), and two opt-in per vhost —
-   `wp-microcache` (serve stale on PHP failure, stampede lock) and `cloudflare-only`
+   that `harden.sh` installs: `wp-hardening` (always included), and three opt-in per vhost —
+   `wp-microcache` (serve stale on PHP failure, stampede lock), `scanner-block` (reject
+   probe traffic before PHP; `harden.sh --scanner-block`) and `cloudflare-only`
    (444 for anything not via Cloudflare or loopback; proxied hosts only).
 
 4. **Droplet provisioning** (`provision/`, `bin/`) — bring a fresh droplet to the
@@ -33,7 +34,8 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    DBs + web roots + bare repo + vhosts + cache + wp-config-env), and one-command
    GitHub wiring (`bin/onboard.sh`: deploy key + secrets + caller workflow). Ongoing
    ops: `backup.sh` (nightly restic → S3/B2 of DB + uploads, systemd timer, one
-   `BACKUP-RESULT` line) and `wp-cron.sh` (WP-Cron from a per-minute timer as www-data). See
+   `BACKUP-RESULT` line), `wp-cron.sh` (WP-Cron from a per-minute timer as www-data) and
+   `fpm-pools.sh` (a PHP-FPM pool per site per environment, with a slow log). See
    **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end lifecycle.
 
 ## Consume it (per site)
@@ -70,7 +72,7 @@ works if the kit is ever unavailable.
 | Doc | Covers |
 |---|---|
 | [docs/new-site-runbook.md](docs/new-site-runbook.md) | End-to-end lifecycle for standing up a new site |
-| [docs/droplet-cache-convention.md](docs/droplet-cache-convention.md) | The canonical FastCGI micro-cache, plus the `sites-enabled` drift trap |
+| [docs/droplet-cache-convention.md](docs/droplet-cache-convention.md) | The caching baseline every production site gets, the canonical FastCGI micro-cache, and the `sites-enabled` drift trap. Check the fleet with `bin/fleet-cache-check.sh` |
 | [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), real-IP restoration, and closing origin bypass per vhost |
 | [docs/security-hardening.md](docs/security-hardening.md) | `harden.sh` — what it installs, what is load-bearing, and what it does not stop |
 | [docs/nginx-5xx-triage-runbook.md](docs/nginx-5xx-triage-runbook.md) | Triaging origin 5xx |
