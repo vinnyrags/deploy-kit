@@ -13,9 +13,14 @@
 #   /etc/nginx/snippets/cloudflare-only.conf      444 anything not via CF (opt-in include)
 #   /etc/nginx/snippets/wp-microcache.conf        stale/lock/background-update for the
 #                                                 FastCGI micro-cache (opt-in include)
+#   /etc/nginx/snippets/scanner-block.conf        reject scanner traffic before PHP
+#                                                 (baseline; inserted with --scanner-block)
 #
-# The two opt-in snippets are installed but NOT inserted into any vhost — each is a
-# per-site decision (see the comments in nginx/*.snippet.conf). Installing them is inert.
+# The opt-in snippets are installed but NOT inserted into any vhost unless asked —
+# each is a per-site decision (see the comments in nginx/*.snippet.conf). Installing
+# them is inert. scanner-block is part of the fleet baseline
+# (docs/droplet-cache-convention.md); --scanner-block inserts it after the
+# wp-hardening include in every vhost this run touches (respects --only).
 #
 # ORDER MATTERS. Cloudflare real-IP must be in place BEFORE rate limiting, or the limit
 # keys on the Cloudflare edge IP instead of the visitor. On a proxied site that buckets
@@ -28,6 +33,8 @@
 #     harden.sh --check              report current state, change nothing
 #     harden.sh --only <vhost>       apply, but patch only that one vhost (staging first)
 #     harden.sh                      apply to all enabled vhosts
+#     harden.sh --scanner-block [--only <vhost>]
+#                                    also include snippets/scanner-block.conf
 #
 set -euo pipefail
 
@@ -36,11 +43,13 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="/root/nginx-bak/harden-${STAMP}"
 ONLY=""
 CHECK=0
+SCANNER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK=1 ;;
     --only)  ONLY="${2:-}"; shift ;;
+    --scanner-block) SCANNER=1 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -55,11 +64,11 @@ if [ "$CHECK" = "1" ]; then
     if [ -f "/etc/nginx/conf.d/$f" ]; then echo "  PRESENT  $f"; else echo "  MISSING  $f"; fi
   done
   echo "=== snippets ==="
-  for f in wp-hardening.conf wp-microcache.conf cloudflare-only.conf; do
+  for f in wp-hardening.conf wp-microcache.conf cloudflare-only.conf scanner-block.conf; do
     if [ -f "/etc/nginx/snippets/$f" ]; then echo "  PRESENT  $f"; else echo "  MISSING  $f"; fi
   done
   echo "=== vhosts including the opt-in snippets ==="
-  for f in wp-microcache.conf cloudflare-only.conf; do
+  for f in wp-microcache.conf cloudflare-only.conf scanner-block.conf; do
     grep -l "snippets/$f" /etc/nginx/sites-enabled/* 2>/dev/null | sed "s|^|  $f  |" || true
   done
   echo "=== vhosts including the snippet ==="
@@ -148,11 +157,11 @@ log "wp-security.conf installed"
 # Back up before overwriting: vhosts include these, so a rollback must RESTORE a
 # snippet that existed, never delete it — a missing included file fails `nginx -t`
 # for every site on the box.
-for f in wp-hardening wp-microcache cloudflare-only; do
+for f in wp-hardening wp-microcache cloudflare-only scanner-block; do
   [ -f "/etc/nginx/snippets/$f.conf" ] && cp "/etc/nginx/snippets/$f.conf" "$BACKUP/snippet-$f.conf"
   cp "$KIT/nginx/$f.snippet.conf" "/etc/nginx/snippets/$f.conf"
 done
-log "snippets installed: wp-hardening (+ opt-in wp-microcache, cloudflare-only)"
+log "snippets installed: wp-hardening (+ opt-in wp-microcache, cloudflare-only, scanner-block)"
 
 # Iterate sites-ENABLED, not sites-available, and resolve to the file nginx actually
 # loads. This is load-bearing: on three of the four ARTHOUSE droplets, sites-enabled
@@ -196,6 +205,25 @@ for link in /etc/nginx/sites-enabled/*; do
 done
 log "vhosts patched: $patched"
 
+# --- 3b. scanner-block include (opt-in flag) -----------------------------------------
+if [ "$SCANNER" = "1" ]; then
+  # shellcheck disable=SC1091
+  source "$KIT/provision/lib/vhost.sh"
+  for link in /etc/nginx/sites-enabled/*; do
+    [ -e "$link" ] || continue
+    base="$(basename "$link")"
+    case "$base" in 000-drop-default) continue ;; esac
+    [ -n "$ONLY" ] && [ "$base" != "$ONLY" ] && continue
+    v="$(readlink -f "$link")"
+    [ -f "$v" ] || continue
+    # Back up once per run: step 3 may already have saved this vhost.
+    if ! grep -q "^${base}"$'\t' "$BACKUP/manifest.txt"; then
+      cp "$v" "$BACKUP/$base"; printf '%s\t%s\n' "$base" "$v" >> "$BACKUP/manifest.txt"
+    fi
+    log "scanner-block: $base — $(add_include_after_hardening "$v" scanner-block)"
+  done
+fi
+
 # --- 4. validate, or roll everything back -------------------------------------------
 if nginx -t 2>&1; then
   systemctl reload nginx
@@ -217,7 +245,7 @@ else
   [ -f "$BACKUP/wp-security.conf" ] || rm -f /etc/nginx/conf.d/wp-security.conf
   [ -f "$BACKUP/00-cloudflare-realip.conf" ] || rm -f /etc/nginx/conf.d/00-cloudflare-realip.conf
   [ -f "$BACKUP/00-cloudflare-geo.conf" ] || rm -f /etc/nginx/conf.d/00-cloudflare-geo.conf
-  for f in wp-hardening wp-microcache cloudflare-only; do
+  for f in wp-hardening wp-microcache cloudflare-only scanner-block; do
     if [ -f "$BACKUP/snippet-$f.conf" ]; then
       cp "$BACKUP/snippet-$f.conf" "/etc/nginx/snippets/$f.conf"
     else

@@ -1,7 +1,8 @@
 #!/bin/bash
 # deploy-kit — provision ONE Mythus/IX WordPress site's infra on a base-provisioned
 # droplet: prod+staging DBs, web roots, bare repo + deploy-kit hook + site.conf,
-# nginx vhosts + FastCGI cache blocks, and per-env wp-config-env.php.
+# nginx vhosts + FastCGI cache blocks, a PHP-FPM pool per environment (with slow log),
+# and per-env wp-config-env.php.
 #
 # Does NOT: deploy code (that's the first `git push`), run certbot (do after DNS),
 # or `wp core install` (after the first deploy). Refuses to clobber an existing site.
@@ -80,6 +81,9 @@ render -e "s#{{SERVER_NAMES}}#${STG_DOMAIN}#g" -e "s#{{WEBROOT}}#${STG_ROOT}#g" 
 ln -sf "/etc/nginx/sites-available/${DOMAIN}"     "/etc/nginx/sites-enabled/${DOMAIN}"
 ln -sf "/etc/nginx/sites-available/${STG_DOMAIN}" "/etc/nginx/sites-enabled/${STG_DOMAIN}"
 mkdir -p "/var/cache/nginx/${ZONE_DIR}" "/var/cache/nginx/${ZONE_DIR}-staging"
+# The vhost template includes scanner-block.conf; a droplet hardened before that snippet
+# existed would fail `nginx -t` on a missing file. harden.sh normally installs it.
+[ -f /etc/nginx/snippets/scanner-block.conf ] || cp "$KIT/nginx/scanner-block.snippet.conf" /etc/nginx/snippets/scanner-block.conf
 
 # This script is what turns caching ON for a site, so it is the last point at which a
 # missing droplet-level fastcgi_cache_key can be caught before it reaches production.
@@ -92,6 +96,10 @@ if nginx -t 2>&1 | grep -q 'no "fastcgi_cache_key"'; then
   echo "       See docs/droplet-cache-convention.md." >&2
   exit 1
 fi
+
+# Own pool per environment — the template ships pointing at the shared default socket.
+# Runs after the cache-key check because fpm-pools.sh reloads nginx itself.
+KIT="$KIT" bash "$KIT/provision/fpm-pools.sh" "$SLUG" "$PHP_VER" --prod "$DOMAIN" --staging "$STG_DOMAIN"
 systemctl reload nginx
 
 # Provisioning is not done until the site is verified. This deliberately runs

@@ -19,6 +19,8 @@ server {
     # Must precede `location ~ \.php$` below — nginx matches regex locations in order
     # of appearance. Installed by provision/harden.sh, which provision-base.sh runs.
     include snippets/wp-hardening.conf;
+    # Scanner traffic rejected before PHP (fleet baseline) — same ordering rule.
+    include snippets/scanner-block.conf;
 
     set $skip_cache 0;
     if ($no_cache_method_{{SITE}}) { set $skip_cache 1; }
@@ -49,6 +51,7 @@ server {
     location ~ \.php$ {
         try_files $uri =404;
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        # new-site.sh repoints this at the site's own pool (provision/fpm-pools.sh).
         fastcgi_pass unix:/run/php/php{{PHP_VER}}-fpm.sock;
         fastcgi_index index.php;
         include fastcgi_params;
