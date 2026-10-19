@@ -40,7 +40,10 @@ set -euo pipefail
 
 KIT="${KIT:-/opt/deploy-kit}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP="/root/nginx-bak/harden-${STAMP}"
+# mktemp makes each run's directory unique even within one second — two `--only` runs
+# back to back once shared a directory, and the second truncated the first's
+# manifest.txt, so the first vhost's rollback record was lost. Created below.
+BACKUP=""
 ONLY=""
 CHECK=0
 SCANNER=0
@@ -84,7 +87,8 @@ if [ "$CHECK" = "1" ]; then
   exit 0
 fi
 
-mkdir -p "$BACKUP" /etc/nginx/snippets
+mkdir -p /root/nginx-bak /etc/nginx/snippets
+BACKUP="$(mktemp -d "/root/nginx-bak/harden-${STAMP}-XXXX")"
 log "backups -> $BACKUP"
 
 # --- 1. Cloudflare real-IP ----------------------------------------------------------

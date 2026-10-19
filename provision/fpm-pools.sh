@@ -72,8 +72,10 @@ done
 [ -n "$PROD$STG" ] || { echo "need --prod and/or --staging" >&2; exit 2; }
 
 POOLD="/etc/php/${VER}/fpm/pool.d"
-STAMP="$(date +%Y%m%d-%H%M%S)"; BACKUP="/root/fpm-bak/${SLUG}-${STAMP}"
-mkdir -p "$BACKUP"; cp -a "$POOLD" "$BACKUP/pool.d"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+mkdir -p /root/fpm-bak
+BACKUP="$(mktemp -d "/root/fpm-bak/${SLUG}-${STAMP}-XXXX")"   # unique per run, see harden.sh
+cp -a "$POOLD" "$BACKUP/pool.d"
 : > "$BACKUP/manifest.txt"
 log "backups -> $BACKUP"
 
