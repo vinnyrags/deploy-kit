@@ -230,7 +230,25 @@ Sites not on the Mythus stack cannot take this fix and need the equivalent mu-pl
 the post-receive hook reinstalls from that lock and will silently revert you. See
 [deploy-doctrine.md](deploy-doctrine.md).
 
-## Not built: the audit script, and monitoring
+## Host drift check — `provision/audit.sh` (built 2026-10-20)
+
+`provision/audit.sh` runs ON a droplet as root, read-only. It prints PASS / WARN / FAIL per baseline
+item and exits 1 on any FAIL:
+- nginx: `nginx -t` clean of warnings, TLS 1.2+, `server_tokens off`, gzip types, a cache-status log
+  format, a handshake-rejecting `default_server`, symlinked `sites-enabled`;
+- OS: auto-reboot on, no stale pending reboot, journal capped, no failed units, the PHP CLI matching FPM;
+- per-pool users, and every site's `wp-config-env.php` at `640 root:<pool user>` (from the site confs);
+- the relay config's mode, and every pool user able to read it;
+- ufw, fail2ban, SSH;
+- backup timers, their last result, and a dead-man's switch.
+
+`test/audit.bats` proves each check fails on an un-hardened fixture, because a drift check that cannot
+fail proves nothing. It is the acceptance test for codifying the baseline (vinrag plan, Phase 7).
+
+What follows is still unbuilt: the **WordPress-level** half (enumeration vectors, xmlrpc, PHP
+under uploads, admin count, dumps in a docroot), and monitoring.
+
+## Not built: the WordPress audit, and monitoring
 
 Everything in this document was verified by hand during the 2026-08-24/25 sweep — ad-hoc curl and
 ssh, reconstructed from scratch each time. There is no script that runs the checklist.
