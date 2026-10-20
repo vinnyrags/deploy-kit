@@ -34,14 +34,14 @@ release_base() {
 # Link a release's shared paths to <base>/shared/<path>. A path the repo also
 # ships (e.g. an empty uploads/ dir) is replaced by the link.
 release_link_shared() {
-  local rel="$1" base="$2" p
+  local rel="$1" base="$2" branch="${3:-}" p
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     [ -e "$base/shared/$p" ] || { log "shared/$p missing — create it before the first release"; return 1; }
     mkdir -p "$(dirname "$rel/$p")"
     rm -rf "${rel:?}/$p"
     ln -s "$base/shared/$p" "$rel/$p"
-  done < <(profile_shared_paths)
+  done < <(profile_shared_paths "$branch")
 }
 
 # Point <base>/current at a release with one atomic rename.
@@ -86,7 +86,10 @@ release_deploy() {
   # half-built must never reach the switch below.
   local fail="release left unswitched: $rel"
   git --git-dir="$BARE" archive "$rev" | tar -x -C "$rel" || { log "archive failed — $fail"; return 1; }
-  release_link_shared "$rel" "$base"                     || { log "$fail"; return 1; }
+  release_link_shared "$rel" "$base" "$branch"           || { log "$fail"; return 1; }
+  # Shared secrets belong to this environment's pool user (see pool_user).
+  local user; user="$(pool_user "$branch")"
+  lock_secrets "$base/shared" "$user"
 
   # Build in the new release. If this fails the site has not changed at all.
   profile_build "$rel"                                   || { log "build failed — $fail"; return 1; }
@@ -105,7 +108,7 @@ release_deploy() {
   log "switched current -> $stamp"
   profile_activate "$branch" "$base/current"
 
-  if ! smoke_test "$base/current" "$env"; then
+  if ! smoke_test "$base/current" "$env" "$user"; then
     if [ -n "$prev" ] && [ -d "$prev" ]; then
       release_switch "$base" "$prev"
       profile_activate "$branch" "$base/current"

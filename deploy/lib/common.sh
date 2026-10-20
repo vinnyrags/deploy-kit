@@ -49,14 +49,25 @@ restore()  { cp "$2" "$1" 2>/dev/null || true; }   # restore backup $2 to $1
 
 own() { chown -R "${OWNER:-www-data:www-data}" "$1"; }
 
-# Secret-bearing files in a docroot: readable by PHP (group www-data), writable by
+# The Unix user PHP runs as for a branch: POOL_USER[branch] in the site conf, else
+# www-data. With one user per pool, the sites on a droplet cannot read each other's
+# secrets or write each other's files — separate pools alone only separate workers.
+# Everything that runs PHP or WordPress on a site's behalf (secrets group, wp-cron,
+# the smoke test) asks this, so a conf without the map behaves exactly as before.
+pool_user() {
+  local u
+  u="$(conf_map POOL_USER "$1")"
+  printf '%s' "${u:-www-data}"
+}
+
+# Secret-bearing files in a docroot: readable by PHP (the pool's group), writable by
 # nobody but root, invisible to other accounts. Runs AFTER own(), whose recursive
-# chown would otherwise hand them back to www-data — a PHP RCE could then rewrite
+# chown would otherwise hand them back to the site user — a PHP RCE could then rewrite
 # the DB credentials or salts rather than merely read them.
 lock_secrets() {
-  local f
+  local f group="${2:-www-data}"
   for f in "$1/wp-config-env.php" "$1/auth.json"; do
-    [ -f "$f" ] && chown root:www-data "$f" && chmod 640 "$f"
+    [ -f "$f" ] && chown "root:${group}" "$f" && chmod 640 "$f"
   done
   return 0
 }
@@ -92,9 +103,13 @@ restart_fpm() {
 # hits that host on loopback so the check is not answered by a CDN edge and works
 # before DNS exists. Never rolls anything back — the code is already live; this
 # exists so the failure is LOUD, and so CI goes red instead of green.
+#
+# Runs WordPress as the site's pool user ($3, default www-data). It must be the user
+# that can read wp-config-env.php: as anyone else, `core is-installed` fails, which
+# lands in the "not installed, skipped" branch below and passes without testing.
 smoke_test() {
-  local dest="$1" env="$2"
-  local wp="sudo -u www-data wp --path=wp"
+  local dest="$1" env="$2" user="${3:-www-data}"
+  local wp="sudo -u ${user} wp --path=wp"
 
   [ -f "$dest/wp/wp-load.php" ] || { log "smoke: core not present, skipped"; return 0; }
   ( cd "$dest" && $wp core is-installed >/dev/null 2>&1 ) || { log "smoke: WordPress not installed, skipped"; return 0; }

@@ -30,6 +30,21 @@ declare -A CACHE_DIR=(
   [develop]=/var/cache/nginx/fastcgi-avftb-staging
 )
 
+# Optional — the Unix user each environment's PHP pool runs as (default www-data).
+# Set it to the same user given to fpm-pools.sh --user / --staging-user: deploys chown
+# to it, lock wp-config-env.php to its group, and run wp-cron and the smoke test as it.
+# declare -A POOL_USER=(
+#   [main]=avftb
+#   [develop]=avftb-stg
+# )
+
+# Optional, LAYOUT=releases only — extra paths every release links from shared/,
+# space-separated, per branch. Production's Redis drop-in is the usual one; never share
+# it into staging (it would point staging at production's cache).
+# declare -A SHARED_EXTRA=(
+#   [main]="wp-content/object-cache.php preview"
+# )
+
 # ============================================================================
 # EXAMPLE B — Classic WP theme, no build (Shucked). DEPLOY_DIR points at the
 #             THEME dir; site is uncached + opcache validate_timestamps On.

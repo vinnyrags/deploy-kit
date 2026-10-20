@@ -1,13 +1,16 @@
 # deploy-kit — PHP-FPM pool helpers. Sourced by provision/fpm-pools.sh and the tests.
 # Pure functions: they print or rewrite files and touch no services.
 
-# render_pool <pool_name> <php_ver> <prod|staging> [max_children]
+# render_pool <pool_name> <php_ver> <prod|staging> [max_children] [user]
 #   prod:    pm=dynamic, max_children default 6 — sized for ~70 MB per worker.
 #   staging: pm=ondemand, max 2, idle workers exit after 30s, so staging costs no
 #            memory while nobody uses it and can never take production's workers.
 # Both write a slow log: any request over 2s leaves a PHP stack trace.
+# user: the Unix user (and group) PHP runs as — default www-data. Give each pool its own
+# and the sites stop being able to read each other's secrets or write each other's
+# files. The socket stays owned by www-data either way: that is nginx connecting.
 render_pool() {
-  local name="$1" ver="$2" kind="$3" max="${4:-}"
+  local name="$1" ver="$2" kind="$3" max="${4:-}" user="${5:-www-data}"
   local sock="/run/php/php${ver}-fpm-${name}.sock"
   local slow="/var/log/php${ver}-fpm-${name}.slow.log"
   cat <<POOL
@@ -15,8 +18,8 @@ render_pool() {
 ; rather than hand-editing. One pool per site per environment, so staging deploys,
 ; test runs and bots on one environment cannot take workers from another.
 [${name}]
-user = www-data
-group = www-data
+user = ${user}
+group = ${user}
 listen = ${sock}
 listen.owner = www-data
 listen.group = www-data

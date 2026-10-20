@@ -34,9 +34,22 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    DBs + web roots + bare repo + vhosts + cache + wp-config-env), and one-command
    GitHub wiring (`bin/onboard.sh`: deploy key + secrets + caller workflow). Ongoing
    ops: `backup.sh` (nightly restic → S3/B2 of DB + uploads, systemd timer, one
-   `BACKUP-RESULT` line), `wp-cron.sh` (WP-Cron from a per-minute timer as www-data) and
-   `fpm-pools.sh` (a PHP-FPM pool per site per environment, with a slow log). See
-   **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end lifecycle.
+   `BACKUP-RESULT` line), `wp-cron.sh` (WP-Cron from a per-minute timer as the site's
+   pool user) and `fpm-pools.sh` (a PHP-FPM pool per site per environment, with a slow
+   log). See **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end
+   lifecycle.
+
+   **Per-pool users (v1.12, opt-in).** Separate pools stop sites competing for workers;
+   they do not stop one site's PHP reading another's `wp-config-env.php`, because every
+   pool runs as `www-data`. `fpm-pools.sh --user U --staging-user U` gives each pool its
+   own no-login user, and `POOL_USER[branch]` in the site conf makes the rest agree: deploys
+   chown to it and lock secrets to its group, and wp-cron and the smoke test run as it. The
+   smoke test must run as the pool user, or it cannot read the env file and passes as
+   "not installed, skipped". Mail: `MAIL_GROUP` / `MAIL_TEST_USER` for `mail.sh`, so a
+   shared relay config stays readable by every pool that sends. Without `POOL_USER`,
+   everything stays `www-data`, exactly as before. Releases can also link per-branch
+   extra paths from `shared/` (`SHARED_EXTRA`, e.g. a Redis drop-in). `backup.sh` resolves
+   a symlinked uploads dir first, because restic stores a symlink as a symlink.
 
 ## Consume it (per site)
 

@@ -20,12 +20,13 @@ setup() {
   # Stubs for everything outside releases.sh.
   mkdir -p "$T/bin"; printf '#!/bin/sh\n[ -n "$WP_FAIL" ] && exit 1; exit 0\n' > "$T/bin/wp"; chmod +x "$T/bin/wp"
   export PATH="$T/bin:$PATH"
-  log() { echo ">> $*"; }
-  conf_map() { local -n _m="$1"; printf '%s' "${_m[$2]:-}"; }
-  profile_shared_paths() { printf '%s\n' wp-config-env.php wp-content/uploads wp-content/debug.log; }
+  # The real helpers (log, conf_map, pool_user, lock_secrets) and the real mythus-ix
+  # profile_shared_paths; only the build, activation and smoke test are stubbed.
+  source "$KIT/deploy/lib/common.sh"
+  source "$KIT/deploy/profiles/mythus-ix.sh"
   profile_build() { [ -n "${BUILD_FAIL:-}" ] && return 1; mkdir -p "$1/vendor" "$1/theme/node_modules"; echo built > "$1/vendor/ok"; echo x > "$1/auth.json"; }
   profile_activate() { echo "activate $(basename "$(readlink -f "$2")")" >> "$CALLS"; }
-  smoke_test() { [ -z "${SMOKE_FAIL:-}" ]; }
+  smoke_test() { echo "smoke as ${3:-}" >> "$CALLS"; [ -z "${SMOKE_FAIL:-}" ]; }
   export -f log
   source "$KIT/deploy/lib/releases.sh"
 }
@@ -129,4 +130,40 @@ live() { basename "$(readlink -f "$BASE/current")"; }
   run bash -c 'set -euo pipefail; source "'"$KIT"'/deploy/lib/common.sh"; v="$(conf_map CACHE_DIR develop)"; echo "[$v]"'
   [ "$status" -eq 0 ]
   [ "$output" = "[]" ]
+}
+
+@test "SHARED_EXTRA links that branch's extra paths, and only that branch's" {
+  mkdir -p "$BASE/shared/preview"; echo drop-in > "$BASE/shared/wp-content/object-cache.php"
+  declare -A SHARED_EXTRA=( [main]="wp-content/object-cache.php preview" )
+  git --git-dir="$BARE" branch -f main develop
+  release_deploy main "$BASE/current" production "$(git --git-dir="$BARE" rev-parse main)"
+  [ "$(readlink "$BASE/current/wp-content/object-cache.php")" = "$BASE/shared/wp-content/object-cache.php" ]
+  [ "$(readlink "$BASE/current/preview")" = "$BASE/shared/preview" ]
+  # develop has no SHARED_EXTRA entry: no drop-in, so it can never reach production's Redis.
+  rm -rf "$BASE/releases" "$BASE/current"
+  release_deploy develop "$BASE/current" staging "$(rev)"
+  [ ! -e "$BASE/current/wp-content/object-cache.php" ]
+  [ ! -e "$BASE/current/preview" ]
+}
+
+@test "a SHARED_EXTRA path missing from shared/ fails before anything is switched" {
+  declare -A SHARED_EXTRA=( [develop]="wp-content/object-cache.php" )
+  run release_deploy develop "$BASE/current" staging "$(rev)"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shared/wp-content/object-cache.php missing"* ]]
+  [ ! -e "$BASE/current" ]
+}
+
+@test "shared secrets are locked to the pool user, and the smoke test runs as it" {
+  id -u dktestpool >/dev/null 2>&1 || useradd --system --user-group --no-create-home dktestpool
+  declare -A POOL_USER=( [develop]=dktestpool )
+  release_deploy develop "$BASE/current" staging "$(rev)"
+  [ "$(stat -c '%U:%G %a' "$BASE/shared/wp-config-env.php")" = "root:dktestpool 640" ]
+  grep -q "smoke as dktestpool" "$CALLS"
+}
+
+@test "without POOL_USER, secrets and the smoke test stay www-data (fleet default)" {
+  release_deploy develop "$BASE/current" staging "$(rev)"
+  [ "$(stat -c '%U:%G %a' "$BASE/shared/wp-config-env.php")" = "root:www-data 640" ]
+  grep -q "smoke as www-data" "$CALLS"
 }

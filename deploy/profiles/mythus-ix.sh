@@ -46,20 +46,29 @@ profile_activate() {
 }
 
 # Shared, mutable paths a release links to instead of carrying (LAYOUT=releases).
-profile_shared_paths() { printf '%s\n' wp-config-env.php wp-content/uploads wp-content/debug.log; }
+# SHARED_EXTRA[branch] in the site conf adds more, space-separated — e.g. production's
+# Redis drop-in (wp-content/object-cache.php) or hand-placed static files. Per branch
+# on purpose: a drop-in shared into staging would point it at production's Redis.
+profile_shared_paths() {
+  printf '%s\n' wp-config-env.php wp-content/uploads wp-content/debug.log
+  local extra p
+  extra="$(conf_map SHARED_EXTRA "${1:-}")"
+  for p in $extra; do printf '%s\n' "$p"; done
+}
 
 # LAYOUT=inplace (default): check out straight into the live docroot.
 profile_deploy() {
   local branch="$1" dest="$2" env="$3"
   local envbak="/tmp/${THEME}-env-${env}.php"
+  local user; user="$(pool_user "$branch")"
 
   preserve "$dest/wp-config-env.php" "$envbak"      # env config is not in the repo
   checkout_tree "$branch" "$dest"
   clean_tree "$branch" "$dest" "wp-content/themes/${THEME}/src"
   restore "$dest/wp-config-env.php" "$envbak"
   profile_build "$dest"
-  own "$dest"
-  lock_secrets "$dest"
+  OWNER="${user}:${user}" own "$dest"
+  lock_secrets "$dest" "$user"
   profile_activate "$branch" "$dest"
-  smoke_test "$dest" "$env"
+  smoke_test "$dest" "$env" "$user"
 }

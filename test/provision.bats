@@ -119,3 +119,29 @@ N
   echo "$output"
   [ "$status" -eq 0 ]
 }
+
+@test "pool user: user and group follow it, the socket stays nginx's" {
+  run render_pool example 8.4 prod 8 vinrag
+  [[ "$output" == *"user = vinrag"* ]]
+  [[ "$output" == *"group = vinrag"* ]]
+  [[ "$output" == *"listen.owner = www-data"* ]]
+  [[ "$output" == *"listen.group = www-data"* ]]
+}
+
+@test "pool user defaults to www-data, so existing pools render unchanged" {
+  run render_pool example 8.4 prod
+  [[ "$output" == *"user = www-data"* ]]
+  [[ "$output" == *"group = www-data"* ]]
+}
+
+@test "a pool with its own user passes php-fpm -t" {
+  fpm="$(ls /usr/sbin/php-fpm* 2>/dev/null | head -1)"
+  [ -n "$fpm" ] || skip "php-fpm not installed"
+  id -u dkpool >/dev/null 2>&1 || useradd --system --user-group --no-create-home dkpool
+  mkdir -p "$T/fpm/pool.d"
+  render_pool example 8.4 prod 4 dkpool > "$T/fpm/pool.d/example.conf"
+  printf '[global]\nerror_log = %s/fpm.log\ninclude=%s/fpm/pool.d/*.conf\n' "$T" "$T" > "$T/fpm/php-fpm.conf"
+  run "$fpm" -t -y "$T/fpm/php-fpm.conf"
+  echo "$output"
+  [ "$status" -eq 0 ]
+}

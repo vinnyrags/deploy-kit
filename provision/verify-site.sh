@@ -53,7 +53,8 @@ check_env() { # check_env <host> <docroot> <label>
   head_ "── ${label}  (${host})"
 
   if [ ! -d "$root" ]; then bad "docroot exists" "$root missing"; return; fi
-  local WP="sudo -u www-data wp --path=wp"
+  # WP_USER: the pool user that can read this site's env file (POOL_USER in the conf).
+  local WP="sudo -u ${WP_USER:-www-data} wp --path=wp"
 
   # ---- nginx layer: true whether or not WordPress is installed ----------------
   local vhost="/etc/nginx/sites-enabled/${host}"

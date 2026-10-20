@@ -74,6 +74,12 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="/root/mail-backups/${STAMP}"
 CONF=/etc/msmtprc
 LOGFILE=/var/log/msmtp.log
+# Who may read the relay config, and who test sends run as. www-data while every PHP
+# pool runs as www-data. Once pools have their own users (fpm-pools.sh --user), use a
+# dedicated group that holds every pool user, e.g. MAIL_GROUP=mailrelay
+# MAIL_TEST_USER=<a pool user> — the config must stay readable by every site that sends.
+MAIL_GROUP="${MAIL_GROUP:-www-data}"
+MAIL_TEST_USER="${MAIL_TEST_USER:-www-data}"
 
 # PORT starts empty so an explicit --port survives the provider defaults below.
 PROVIDER=""; HOST=""; PORT=""; USERNAME=""; KEYFILE=""; FROM=""; TEST_TO=""; CHECK=0
@@ -107,28 +113,28 @@ if [ "$CHECK" = "1" ]; then
     perms="$(stat -c '%a %U:%G' "$CONF")"
     echo "  PRESENT  $CONF  [$perms]"
     case "$perms" in
-      "640 root:www-data") echo "  OK       readable by PHP-FPM" ;;
-      *) echo "  BROKEN   must be 640 root:www-data — web mail is failing silently" ;;
+      "640 root:${MAIL_GROUP}") echo "  OK       readable by PHP-FPM (group ${MAIL_GROUP})" ;;
+      *) echo "  BROKEN   must be 640 root:${MAIL_GROUP} — web mail is failing silently" ;;
     esac
     echo "  account default: $(grep '^account default' "$CONF" 2>/dev/null || echo '(none)')"
   else
     echo "  MISSING  $CONF"
   fi
-  echo "=== can www-data actually send? ==="
-  if sudo -u www-data test -r "$CONF" 2>/dev/null; then echo "  OK       www-data can read the config"
-  else echo "  BROKEN   www-data CANNOT read the config"; fi
+  echo "=== can ${MAIL_TEST_USER} actually send? ==="
+  if sudo -u "$MAIL_TEST_USER" test -r "$CONF" 2>/dev/null; then echo "  OK       ${MAIL_TEST_USER} can read the config"
+  else echo "  BROKEN   ${MAIL_TEST_USER} CANNOT read the config"; fi
   exit 0
 fi
 
 # --- verify-only --------------------------------------------------------------------
 if [ -n "$TEST_TO" ] && [ -z "$FROM" ]; then
   [ -f "$CONF" ] || die "no $CONF to test"
-  log "sending as www-data (the PHP-FPM identity) to $TEST_TO"
-  sudo -u www-data /usr/sbin/sendmail -t -i <<EOF
+  log "sending as ${MAIL_TEST_USER} (the PHP-FPM identity) to $TEST_TO"
+  sudo -u "$MAIL_TEST_USER" /usr/sbin/sendmail -t -i <<EOF
 To: ${TEST_TO}
 Subject: [deploy-kit] mail check from $(hostname)
 
-Sent as www-data. If this arrives, web-initiated mail works on this host.
+Sent as ${MAIL_TEST_USER}. If this arrives, web-initiated mail works on this host.
 Confirm the From header and that DKIM aligns to this site's own domain.
 EOF
   log "queued — confirm in $LOGFILE and in the recipient's headers"
@@ -208,29 +214,29 @@ password       ${KEY}
 account default : primary
 EOF
 
-chown root:www-data "${CONF}.new"
+chown "root:${MAIL_GROUP}" "${CONF}.new"
 chmod 640 "${CONF}.new"
 mv "${CONF}.new" "$CONF"
 log "wrote $CONF [$(stat -c '%a %U:%G' "$CONF")]"
 
-# msmtp appends to its log as www-data, so the log needs group write too.
+# msmtp appends to its log as the PHP user, so the log needs group write too.
 touch "$LOGFILE"
-chown root:www-data "$LOGFILE"
+chown "root:${MAIL_GROUP}" "$LOGFILE"
 chmod 660 "$LOGFILE"
 log "log $LOGFILE [$(stat -c '%a %U:%G' "$LOGFILE")]"
 
 # --- verify as the web user, not as root --------------------------------------------
-sudo -u www-data test -r "$CONF" || die "www-data still cannot read $CONF"
-log "www-data can read the config"
+sudo -u "$MAIL_TEST_USER" test -r "$CONF" || die "${MAIL_TEST_USER} still cannot read $CONF"
+log "${MAIL_TEST_USER} can read the config"
 
 if [ -n "$TEST_TO" ]; then
-  log "test send as www-data -> $TEST_TO"
-  sudo -u www-data /usr/sbin/sendmail -t -i <<EOF
+  log "test send as ${MAIL_TEST_USER} -> $TEST_TO"
+  sudo -u "$MAIL_TEST_USER" /usr/sbin/sendmail -t -i <<EOF
 From: ${FROM}
 To: ${TEST_TO}
 Subject: [deploy-kit] mail configured on $(hostname)
 
-Relay: ${HOST}. Sent as www-data, so this proves the path WordPress uses.
+Relay: ${HOST}. Sent as ${MAIL_TEST_USER}, so this proves the path WordPress uses.
 Check the headers for dkim=pass aligned to this site's own domain.
 EOF
   sleep 2
@@ -239,10 +245,10 @@ fi
 
 cat <<EOF
 
-DONE. Rollback: cp $BACKUP/msmtprc $CONF && chown root:www-data $CONF && chmod 640 $CONF
+DONE. Rollback: cp $BACKUP/msmtprc $CONF && chown root:${MAIL_GROUP} $CONF && chmod 640 $CONF
 
 VERIFY (not from a root shell):
-  sudo -u www-data /usr/sbin/sendmail -t -i <<< \$'To: you@example.com\nSubject: t\n\nbody'
+  sudo -u ${MAIL_TEST_USER} /usr/sbin/sendmail -t -i <<< \$'To: you@example.com\nSubject: t\n\nbody'
   then read the DELIVERED headers — a 250 from the relay only proves it was accepted:
     dkim=pass  header.i=@<your-domain>
     spf=pass

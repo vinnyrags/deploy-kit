@@ -5,7 +5,8 @@
 # cache most anonymous requests never reach PHP, so scheduled work (Yoast, Smash
 # Balloon, transient cleanup, scheduled posts) runs late and unevenly — and when it
 # does run, it runs inside some visitor's request. This runs it every minute instead,
-# as www-data (files it writes must be owned like the site's own).
+# as the branch's pool user — POOL_USER[branch], else www-data — so files it writes are
+# owned like the site's own, and it can read the env file that only that pool can.
 #
 #   Usage:
 #     wp-cron.sh --install <site.conf> [branch...]   install + start a timer per branch
@@ -45,7 +46,7 @@ case "$MODE" in
     BRANCH="${3:?branch required}"
     DEST="$(conf_map DEPLOY_DIR "$BRANCH")"
     [ -n "$DEST" ] || { echo "no DEPLOY_DIR[$BRANCH] in $CONF" >&2; exit 1; }
-    exec runuser -u www-data -- wp --path="$DEST/wp" cron event run --due-now --quiet
+    exec runuser -u "$(pool_user "$BRANCH")" -- wp --path="$DEST/wp" cron event run --due-now --quiet
     ;;
   *) sed -n '10,17p' "$0"; exit 2 ;;
 esac
