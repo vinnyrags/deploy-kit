@@ -214,6 +214,11 @@ password       ${KEY}
 account default : primary
 EOF
 
+# A dedicated group (MAIL_GROUP=mailrelay) is created on first use; fpm-pools.sh --user
+# joins each pool user to it.
+if [ "$MAIL_GROUP" != www-data ] && ! getent group "$MAIL_GROUP" >/dev/null; then
+  groupadd --system "$MAIL_GROUP"; log "created group $MAIL_GROUP"
+fi
 chown "root:${MAIL_GROUP}" "${CONF}.new"
 chmod 640 "${CONF}.new"
 mv "${CONF}.new" "$CONF"
