@@ -65,6 +65,12 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    extra paths from `shared/` (`SHARED_EXTRA`, e.g. a Redis drop-in). `backup.sh` resolves
    a symlinked uploads dir first, because restic stores a symlink as a symlink.
 
+   **In-place → releases migration (v1.14).** `migrate-to-releases.sh` moves one branch
+   of a live site onto `LAYOUT=releases`. `--prepare` builds `shared/` and the first
+   release while nginx still serves the old docroot; `--switch` is the one live moment
+   (final rsync, vhost to `<base>/current`, conf installed, smoke test that rolls back on
+   failure); `--rollback` restores the vhost and conf. The old docroot is never touched.
+
 ## Consume it (per site)
 
 **GitHub side** — the site's `.github/workflows/deploy.yml`:
