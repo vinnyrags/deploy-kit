@@ -111,6 +111,11 @@ case "$MODE" in
     trap 'rc=$?; [ "$rc" -eq 0 ] || echo "BACKUP-RESULT: fail (exit $rc)"' EXIT
 
     uploads="$(wp_ eval 'echo wp_upload_dir()["basedir"];')"
+    # Under LAYOUT=releases WordPress reports current/wp-content/uploads, which is a
+    # symlink into shared/. restic stores a symlink given as a backup path AS a symlink:
+    # without resolving it, every nightly "uploads" snapshot would hold one link and no
+    # files. A no-op for an in-place docroot.
+    uploads="$(readlink -f "$uploads")"
     [ -d "$uploads" ] || die "uploads dir not found: $uploads"
 
     log "database → restic (${SITE}, ${BRANCH})"
