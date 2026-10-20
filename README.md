@@ -39,6 +39,20 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    log). See **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end
    lifecycle.
 
+   **Host baseline + drift check (v1.13).** `baseline.sh` brings a box (fresh, via
+   `provision-base.sh`, or already running) to the host baseline:
+   - TLS 1.2+ only, `server_tokens off`, gzip for text assets, `log_format timed`;
+   - a catch-all `default_server` that refuses unknown hosts at the handshake;
+   - unattended-upgrades that reboot when required and take PHP patches from the PPA;
+   - a journald cap and PHP-FPM limits.
+
+   Idempotent, backed up, and validated before any reload. `audit.sh` is the read-only
+   check of the same list. It exits 1 on drift, and `test/` proves each check fails on an
+   un-hardened box. Also new:
+   - `backup.sh --healthchecks <conf> <env-file>`: a dead-man's switch for the nightly backup;
+   - `fail2ban-direct.sh <host> --name <n>`: a scanner ban, for hosts NOT behind Cloudflare only;
+   - `fpm-pools.sh --user` joins pool users to `mailrelay` when the box has one.
+
    **Per-pool users (v1.12, opt-in).** Separate pools stop sites competing for workers;
    they do not stop one site's PHP reading another's `wp-config-env.php`, because every
    pool runs as `www-data`. `fpm-pools.sh --user U --staging-user U` gives each pool its

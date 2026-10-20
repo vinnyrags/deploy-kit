@@ -60,10 +60,7 @@ export NVM_DIR=/root/.nvm; . "$NVM_DIR/nvm.sh"; nvm install --lts >/dev/null 2>&
 
 log "dirs + nginx base"
 mkdir -p /var/cache/nginx /var/repo /etc/deploy-kit
-printf 'server { listen 80 default_server; listen [::]:80 default_server; server_name _; return 444; }\n' \
-  > /etc/nginx/sites-available/000-drop-default
-ln -sf /etc/nginx/sites-available/000-drop-default /etc/nginx/sites-enabled/000-drop-default
-rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/default   # the catch-all from baseline.sh replaces it
 touch /etc/nginx/conf.d/wp-fastcgi-cache.conf   # new-site.sh appends per-site blocks
 
 # Droplet-level fastcgi_cache_key. Required by every vhost that sets `fastcgi_cache`.
@@ -96,6 +93,11 @@ log "wordpress hardening (cloudflare real-ip, wp-login rate limit, xmlrpc block)
 # Single source of truth — harden.sh is also the path for already-provisioned boxes,
 # and re-running it is how the Cloudflare ranges get refreshed.
 bash /opt/deploy-kit/provision/harden.sh
+
+log "host baseline (TLS 1.2+, catch-all, gzip, timed log, auto-reboot, journald cap, PHP limits)"
+# Same script an already-running box uses, so a fresh droplet and a long-lived one end
+# up identical — provision/audit.sh checks the result.
+bash /opt/deploy-kit/provision/baseline.sh
 
 # `nginx -t &&` is not sufficient on its own: nginx exits 0 on warnings, so a config
 # that is silently broken at runtime still passes. Assert the specific warning is absent.
