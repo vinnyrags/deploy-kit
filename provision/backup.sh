@@ -28,6 +28,8 @@
 #     backup.sh --run     <site.conf>   back up now (what the timer runs)
 #     backup.sh --verify  <site.conf>   restic check, reading a 5% sample of the data
 #     backup.sh --list    <site.conf>   list snapshots
+#     backup.sh --healthchecks <site.conf> <env-file>   add the dead-man's switch: the env
+#                                       file (0600 root) holds HC_URL=https://hc-ping.com/<uuid>
 #
 #   Site conf keys (in /etc/deploy-kit/<site>.conf, alongside the deploy keys):
 #     BACKUP_BRANCH=main               which environment to back up (DEPLOY_DIR key)
@@ -137,6 +139,18 @@ case "$MODE" in
     load_creds
     restic check --read-data-subset=5%
     echo "BACKUP-RESULT: ok (verified)"
+    ;;
+
+  --healthchecks)
+    ENVF="${3:?env file holding HC_URL=… required}"
+    [ -f "$ENVF" ] || die "no such env file: $ENVF"
+    grep -qE '^HC_URL=https?://' "$ENVF" || die "$ENVF must contain HC_URL=https://…"
+    chown root:root "$ENVF"; chmod 600 "$ENVF"
+    DROP="/etc/systemd/system/deploy-kit-backup@${SITE}.service.d"
+    mkdir -p "$DROP"
+    sed "s#@ENV_FILE@#${ENVF}#" "$KIT/provision/systemd/deploy-kit-backup-healthchecks.conf" > "$DROP/healthchecks.conf"
+    systemctl daemon-reload
+    log "installed $DROP/healthchecks.conf — run '$0 --run $CONF' or start the unit to send the first ping"
     ;;
 
   --list)
