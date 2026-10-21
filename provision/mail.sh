@@ -59,8 +59,8 @@
 #
 #   --host smtp.resend.com --port 2587 --user resend
 #
-# This is per-account, not fleet-wide: ellenharvey-prod-01 (2026-09-03) has
-# 25/465/587 blocked and 2587 open, while 174.138.70.29 sends happily on 587.
+# This is per-account, not fleet-wide: one droplet (2026-09-03) had 25/465/587
+# blocked and 2587 open, while a droplet on another account sent happily on 587.
 # Check before assuming, from the droplet itself:
 #
 #   for p in 587 465 2587 25; do
@@ -146,7 +146,7 @@ fi
 # The provider supplies defaults; it must not clobber anything given explicitly.
 # This block runs AFTER argument parsing, so assigning PORT unconditionally here
 # silently discarded a --port the caller had already passed. That cost a debugging
-# cycle on ellenharvey-prod-01, where 587 is blocked and 2587 is required.
+# cycle on a droplet where 587 is blocked and 2587 is required.
 case "$PROVIDER" in
   resend) HOST="${HOST:-smtp.resend.com}"; PORT="${PORT:-587}"; USERNAME="${USERNAME:-resend}" ;;
   "")     : ;;

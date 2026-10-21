@@ -6,7 +6,7 @@
 #
 # It answers "is this box still on the baseline the kit installs?" — the drift check.
 # It changes nothing, installs nothing and sends nothing. It is not monitoring: no timer,
-# no alerts (monitoring is parked; see docs/security-hardening.md).
+# no alerts (monitoring is parked by decision).
 #
 # Site-aware checks read /etc/deploy-kit/*.conf: each WordPress site's env file must be
 # 640 root:<its pool user> (POOL_USER, default www-data).

@@ -125,11 +125,10 @@ harmful; they're recorded so the doc isn't read as describing behavior that exis
 
 ## Trap — `sites-enabled/` is the live copy, `sites-available/` is stale
 
-On the **AVFTB and MBF droplets**, the files in `/etc/nginx/sites-enabled/` are **real
-files, not symlinks**, and they have drifted from the same-named files in
-`sites-available/`. Verified 2026-08-20: on both boxes the enabled copy is the newer,
-correct one and the `sites-available` copy is an older revision **missing the entire
-FastCGI cache block**.
+On **hand-provisioned droplets** that predate the kit, the files in `/etc/nginx/sites-enabled/`
+can be **real files, not symlinks**, drifted from the same-named files in `sites-available/`.
+In the cases found, the enabled copy was the newer, correct one and the `sites-available` copy
+an older revision **missing the entire FastCGI cache block**.
 
 Consequences, both easy to hit:
 
@@ -138,10 +137,9 @@ Consequences, both easy to hit:
 - "Restoring" a vhost from `sites-available` silently removes page caching. The site keeps
   serving 200s, so nothing looks broken — traffic just stops being cached.
 
-**Always edit `sites-enabled/<domain>` directly on these boxes, and diff the two before
-trusting either.** Both boxes also carry `*.bak-<epoch>` copies in `sites-available/`;
-those are inert (nginx does not glob that directory) but at least one — AVFTB's
-`avftb-staging.bak-1783962026` — still contains the old `fastcgi_cache_valid 200 301 302
+**Always edit `sites-enabled/<domain>` directly on such boxes, and diff the two before
+trusting either.** Stray `*.bak-<epoch>` copies in `sites-available/` are inert (nginx does
+not glob that directory), but an old one can still carry `fastcgi_cache_valid 200 301 302
 30m`, i.e. the cached-redirect footgun. Never promote a `.bak` into `sites-enabled/`.
 
 Sites provisioned fresh by `new-site.sh` get a proper symlink and are not affected.
@@ -229,9 +227,6 @@ and `EXPIRED` ~30s later on an unchanged page.
    there causes "duplicate listen/map" and breaks `nginx -t`). Use `/root/nginx-bak/`.
 6. `nginx -t` before every reload; keep a one-line rollback (restore backup + reload).
 
-> Live-droplet note (2026-07-15): MF/AVFTB/CBA maps have been **moved to
-> `/etc/nginx/conf.d/wp-fastcgi-cache.conf`** on each droplet (out of the staging vhost —
-> fragility removed). They keep their **per-brand names** (`$no_cache_*_avftb`/`_mbf`/
-> `_staging`) — verbatim relocation, so zero vhost references changed; the generic names
-> above are for *new* sites. Verified per droplet: anon `HIT`, logged-in cookie `BYPASS`,
-> site `200`. Per-droplet rollback scripts live in `/root/nginx-bak/mapmove-*-rollback.sh`.
+> Older droplets may still carry **per-brand map names** (`$no_cache_*_<brand>`) from before
+> the generic names existed. Relocating them to `conf.d/wp-fastcgi-cache.conf` verbatim keeps
+> every vhost reference working; the generic names above are for *new* sites.

@@ -8,7 +8,7 @@
 #   Usage:  onboard.sh <repo_dir> <gh_repo> <droplet_ip> <bare_slug>
 #     repo_dir     local checkout, e.g. ~/Projects/.../aviewfromthebridge
 #     gh_repo      e.g. arthousenewyork/a-view-from-the-bridge
-#     droplet_ip   e.g. 104.248.234.176
+#     droplet_ip   e.g. 203.0.113.10
 #     bare_slug    /var/repo/<slug>.git on the droplet, e.g. aviewfromthebridge
 #
 # Requires: gh (authed, with `workflow` scope), ssh access to root@droplet.

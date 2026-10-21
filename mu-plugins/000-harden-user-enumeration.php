@@ -11,14 +11,12 @@
  * prefix keeps it first in mu-plugin load order.
  *
  * WHY THIS EXISTS
- * Celebrity Autobiography was compromised 2026-08-11 by an attacker who logged in as the
- * "arthouse" administrator with a valid password. They did not have to guess the username:
- * /author/arthouse/ was indexed in Google, and /?author=1 returns a 301 whose Location
- * header contains the login name of user ID 1. Username enumeration plus an unthrottled
- * login form is most of that attack. Rate limiting alone does not fix it — the attacker
- * still knows exactly which account to target.
- *
- * All four vectors were open on all four ARTHOUSE sites when this was written.
+ * A site was compromised by an attacker who logged in as the shared administrator with a
+ * valid password. They did not have to guess the username: the author archive was indexed
+ * by search engines, and /?author=1 returns a 301 whose Location header contains the login
+ * name of user ID 1. Username enumeration plus an unthrottled login form is most of that
+ * attack. Rate limiting alone does not fix it — the attacker still knows exactly which
+ * account to target.
  */
 
 declare(strict_types=1);
@@ -63,8 +61,8 @@ add_action('template_redirect', static function (): void {
  *
  * WordPress core generates /wp-sitemap-users-1.xml and lists it in the sitemap index, which
  * is how Google found and indexed the author archives in the first place. It only appears
- * once an author has published posts, which is why it was live on AVFTB and Celebrity
- * Autobiography but 404 on the other two — that difference is incidental, not protective.
+ * once an author has published posts, which is why it was live on some sites and 404 on
+ * others — that difference is incidental, not protective.
  */
 add_filter('wp_sitemaps_add_provider', static function ($provider, string $name) {
     return $name === 'users' ? false : $provider;

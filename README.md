@@ -106,22 +106,14 @@ works if the kit is ever unavailable.
 |---|---|
 | [docs/new-site-runbook.md](docs/new-site-runbook.md) | End-to-end lifecycle for standing up a new site |
 | [docs/droplet-cache-convention.md](docs/droplet-cache-convention.md) | The caching baseline every production site gets, the canonical FastCGI micro-cache, and the `sites-enabled` drift trap. Check the fleet with `bin/fleet-cache-check.sh` |
-| [docs/cloudflare-edge-settings.md](docs/cloudflare-edge-settings.md) | ECH (off fleet-wide), real-IP restoration, and closing origin bypass per vhost |
-| [docs/security-hardening.md](docs/security-hardening.md) | `harden.sh` — what it installs, what is load-bearing, and what it does not stop |
 | [docs/nginx-5xx-triage-runbook.md](docs/nginx-5xx-triage-runbook.md) | Triaging origin 5xx |
-| [docs/fleet-known-risks.md](docs/fleet-known-risks.md) | Dormant problems on closed-engagement droplets, and whose call it is to fix them |
 | [docs/deploy-doctrine.md](docs/deploy-doctrine.md) | Push to origin; never mutate the server |
 
-## Fleet (reference)
+## In production
 
-| Site | Profile | PHP | Notes |
-|---|---|---|---|
-| View / Matchbook / Celeb Auto | `mythus-ix` | 8.4 / 8.4 / 8.3 | FastCGI micro-cache; kit pinned at `b3e057c` |
-| 3 Summers of Lincoln | `mythus-ix` | 8.4 | first site provisioned wholly by this kit (2026-09-28); pinned `v1.1` |
-| vincentragosta.io, heywilma-connect | `mythus-ix` | 8.4 | onboarded 2026-10-15 (same droplet, kit pinned `v1.9.3`); deploys via the `@v2` workflow. vincentragosta.io is Cloudflare-proxied with `cloudflare-only` + `wp-microcache`, nightly B2 backups and the WP-Cron timer (2026-10-16). heywilma is develop-only (demo) |
-| ellenharvey | `mythus-ix` | 8.4 | own droplet |
-| Shucked | `classic` | 8.2 | no build; FastCGI micro-cache added 2026-08-19 |
-| itzenzo.tv | `nextjs` | — | PM2/systemd |
+Runs the deploys for a handful of client sites and my own, across the `mythus-ix`, `classic` and
+`nextjs` profiles. Per-site details (versions, pins, known issues) are kept privately, not in this
+repo.
 
 ## License
 

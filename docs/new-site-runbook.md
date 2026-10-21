@@ -4,7 +4,7 @@ The ordered lifecycle for standing up a new Mythus/IX WordPress site, from nothi
 live. Three layers: **code** (runtime), **droplet** (infra), **delivery** (this kit).
 
 > Status: **battle-tested once.** 3 Summers of Lincoln was provisioned end-to-end with this
-> runbook on 2026-09-28 (droplet `3sol-prod-01`, kit `v1.1`) with no template failures. The
+> runbook on 2026-09-28 (kit `v1.1`) with no template failures. The
 > corrections that run surfaced are folded in below — most importantly step 1's MariaDB note.
 
 ## 0. Code (your Mac) — the runtime
@@ -63,8 +63,8 @@ vhost, the droplet-level `fastcgi_cache_key`, `harden.sh`, and deploy-kit at `/o
 > - Anonymous users and the `test` database are already absent; MariaDB binds to `127.0.0.1`. The
 >   only thing the script would change is **switching password auth on**, which is a downgrade.
 > - `new-site.sh` creates databases as root **over the socket**. Setting a root password breaks it
->   unless you also add a `/root/.my.cnf`. The AVFTB droplet has a root password and no `.my.cnf`,
->   which is exactly why `new-site.sh` would fail on that box today.
+>   unless you also add a `/root/.my.cnf`. A box with a root password and no `.my.cnf` is exactly
+>   where `new-site.sh` fails.
 >
 > Add a swapfile instead, which the base script does not do and every fleet box has:
 > `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`
@@ -110,8 +110,7 @@ below). *Then* add the proxied A records for apex, `www` and `staging.`.
 snippet and the `fastcgi_cache` directive both survived before you call it done.
 
 **Check ECH on a new zone — it is ON by default for Free zones.** `dig @1.1.1.1 <domain> TYPE65
-+short` is the authority, not the API response or the dashboard. See
-[cloudflare-edge-settings.md](cloudflare-edge-settings.md).
++short` is the authority, not the API response or the dashboard.
 
 Once the origin has a real cert, move the zone from Full to **Full (strict)** — plain Full accepts
 any origin cert, including self-signed.
