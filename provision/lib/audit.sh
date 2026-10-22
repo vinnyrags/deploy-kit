@@ -88,6 +88,12 @@ audit_os_journald() {
     || emit WARN os.journald "journal size uncapped"
 }
 
+# Live: reads swapon. A box without swap OOM-kills PHP or MariaDB on a composer run.
+audit_os_swap() {
+  [ -n "$(swapon --show --noheadings 2>/dev/null)" ] && emit PASS os.swap "swap on" \
+    || emit FAIL os.swap "no swap — a memory spike kills PHP or MariaDB (baseline.sh --swap)"
+}
+
 # --- PHP-FPM ------------------------------------------------------------------------
 audit_php_pool_users() {
   local f u n www=""
@@ -114,6 +120,36 @@ audit_php_secrets() {
                                      || emit FAIL php.secrets "$path is $got, want root:${group} 640"
   done
   [ "$found" = 1 ] || emit WARN php.secrets "no site confs found to check"
+}
+
+# --- per site -------------------------------------------------------------------------
+# What every WordPress site on the box should have, from its conf rather than from what
+# happens to be installed: a deploy-kit-backup timer that does not exist cannot fail.
+# stdin: "<site> <branch> <profile> <layout>" per deployed branch (site_branches in
+# audit.sh). $1: the enabled deploy-kit timer names, one per line.
+#   site.backup  a site with a production branch (main) and no enabled backup timer: FAIL
+#   site.cron    a branch with no WP-Cron timer: WARN (traffic-triggered cron behind a cache)
+#   site.layout  a branch deployed in place: WARN (migrate-to-releases.sh)
+# Only mythus-ix sites: a nextjs app has no database or WP-Cron, and classic deploys a
+# theme into someone else's docroot.
+audit_sites() {
+  local timers="$1" site branch profile layout seen=" "
+  while read -r site branch profile layout; do
+    [ -n "$site" ] && [ "$profile" = mythus-ix ] || continue
+    if [ "$branch" = main ] && [[ "$seen" != *" $site "* ]]; then
+      seen="$seen$site "
+      grep -qx "deploy-kit-backup@${site}.timer" <<<"$timers" \
+        && emit PASS site.backup "$site: nightly off-site backup timer" \
+        || emit FAIL site.backup "$site: production has no backup timer (backup.sh --install)"
+    fi
+    grep -qx "deploy-kit-wpcron@${site}:${branch}.timer" <<<"$timers" \
+      && emit PASS site.cron "$site [$branch]: WP-Cron from a system timer" \
+      || emit WARN site.cron "$site [$branch]: WP-Cron rides on traffic (wp-cron.sh --install)"
+    [ "$layout" = releases ] \
+      && emit PASS site.layout "$site [$branch]: atomic read-only releases" \
+      || emit WARN site.layout "$site [$branch]: deployed in place (migrate-to-releases.sh)"
+  done
+  return 0
 }
 
 # --- mail ---------------------------------------------------------------------------

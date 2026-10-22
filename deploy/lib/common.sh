@@ -94,6 +94,21 @@ restart_fpm() {
   systemctl "$action" "php${ver}-fpm" 2>/dev/null || systemctl restart "php${ver}-fpm"
 }
 
+# wp_state <wp dir> [user] -> installed | not-installed | error
+# `wp core is-installed` exits 1 both for an empty database and for one it cannot reach
+# (or a config it cannot read). Only the second prints a WP-CLI `Error:` or a PHP fatal,
+# and only the first is normal: a new site deploys its code before `wp core install`.
+# Runs as <user> when given (runuser, not sudo: wp-cron asks every minute and sudo would
+# log each one), else as root.
+wp_state() {
+  local path="$1" user="${2:-}" err
+  local cmd=(wp --path="$path" core is-installed)
+  if [ -n "$user" ]; then cmd=(runuser -u "$user" -- "${cmd[@]}"); else cmd+=(--allow-root); fi
+  if err="$("${cmd[@]}" 2>&1 >/dev/null)"; then echo installed
+  elif printf '%s' "$err" | grep -qE '(^|[[:space:]])(Error|PHP Fatal error|Fatal error):'; then echo error
+  else echo not-installed; fi
+}
+
 # Post-deploy smoke test. The deploy hook reports success when the PUSH and BUILD
 # succeeded — not when the site still works. A green banner over a broken site is
 # the fleet's most expensive failure mode: an unconditional "deploy complete" left
@@ -105,14 +120,19 @@ restart_fpm() {
 # exists so the failure is LOUD, and so CI goes red instead of green.
 #
 # Runs WordPress as the site's pool user ($3, default www-data). It must be the user
-# that can read wp-config-env.php: as anyone else, `core is-installed` fails, which
-# lands in the "not installed, skipped" branch below and passes without testing.
+# that can read wp-config-env.php. As anyone else WordPress cannot load, and before
+# wp_state that read as "not installed, skipped" and passed without testing anything;
+# now only a genuinely empty database skips.
 smoke_test() {
   local dest="$1" env="$2" user="${3:-www-data}"
   local wp="sudo -u ${user} wp --path=wp"
 
   [ -f "$dest/wp/wp-load.php" ] || { log "smoke: core not present, skipped"; return 0; }
-  ( cd "$dest" && $wp core is-installed >/dev/null 2>&1 ) || { log "smoke: WordPress not installed, skipped"; return 0; }
+  case "$(wp_state "$dest/wp" "$user")" in
+    installed) ;;
+    not-installed) log "smoke: WordPress not installed, skipped"; return 0 ;;
+    *) log "SMOKE TEST FAILED: WordPress cannot load as ${user} (database, or ${user} cannot read wp-config-env.php)" >&2; return 1 ;;
+  esac
 
   local home host scheme port codenum
   home="$( cd "$dest" && $wp option get home 2>/dev/null )"

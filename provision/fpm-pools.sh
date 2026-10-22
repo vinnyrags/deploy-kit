@@ -95,22 +95,6 @@ restore() {
   done < "$BACKUP/manifest.txt"
 }
 
-# A pool whose user does not exist fails php-fpm -t; create it as a system account that
-# cannot log in and owns nothing yet.
-ensure_user() {
-  [ "$1" = www-data ] && return 0
-  if ! id -u "$1" >/dev/null 2>&1; then
-    useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1"
-    log "created system user $1"
-  fi
-  # A pool user must be able to read the mail relay config, or that site's web mail
-  # fails silently (mail.sh MAIL_GROUP). Join it when the box has one; the reload that
-  # follows gives the new workers the group.
-  if getent group mailrelay >/dev/null && ! id -nG "$1" | tr ' ' '\n' | grep -qx mailrelay; then
-    usermod -aG mailrelay "$1"; log "added $1 to mailrelay"
-  fi
-}
-
 apply() {  # apply <vhost> <pool> <kind> <user>
   local vhost="$1" pool="$2" kind="$3" user="$4" link real n
   link="/etc/nginx/sites-enabled/${vhost}"

@@ -46,6 +46,10 @@ case "$MODE" in
     BRANCH="${3:?branch required}"
     DEST="$(conf_map DEPLOY_DIR "$BRANCH")"
     [ -n "$DEST" ] || { echo "no DEPLOY_DIR[$BRANCH] in $CONF" >&2; exit 1; }
+    # new-site.sh starts the timer before the first deploy and `wp core install`: until
+    # then there is nothing to run, and a failing unit every minute would be noise.
+    [ -f "$DEST/wp/wp-load.php" ] || exit 0
+    [ "$(wp_state "$DEST/wp" "$(pool_user "$BRANCH")")" = not-installed ] && exit 0
     exec runuser -u "$(pool_user "$BRANCH")" -- wp --path="$DEST/wp" cron event run --due-now --quiet
     ;;
   *) sed -n '10,17p' "$0"; exit 2 ;;

@@ -6,10 +6,13 @@
 #   /var/repo, /etc/deploy-kit, and deploy-kit itself at /opt/deploy-kit.
 # Idempotent. Run once per droplet, as root.
 #
-#   Usage:  provision-base.sh [php_ver]        (default 8.4)
+#   Usage:  DEPLOY_KIT_REF=<tag> provision-base.sh [php_ver]        (default 8.4)
+#   Without DEPLOY_KIT_REF the kit is pinned to the latest release tag, never to main.
 #
-# NOT automated here (do once, manually, right after): `mysql_secure_installation`
-# to set the MariaDB root password. new-site.sh assumes root can create DBs.
+# Do NOT run `mysql_secure_installation` afterwards. On Ubuntu 24.04 MariaDB root is
+# already unix_socket-only with no password possible, anonymous users and `test` are
+# absent, and it binds to 127.0.0.1; the script would only switch password auth ON, and
+# new-site.sh creates databases as root over the socket. docs/new-site-runbook.md step 1.
 set -euo pipefail
 PHP_VER="${1:-8.4}"
 export DEBIAN_FRONTEND=noninteractive
@@ -78,10 +81,11 @@ else
   log "fastcgi_cache_key already present — left alone"
 fi
 
-log "deploy-kit @ /opt/deploy-kit (pinned ${DEPLOY_KIT_REF:-main})"
 [ -d /opt/deploy-kit/.git ] || git clone -q https://github.com/vinnyrags/deploy-kit /opt/deploy-kit
 git -C /opt/deploy-kit fetch -q --tags origin
-git -C /opt/deploy-kit checkout -q "${DEPLOY_KIT_REF:-main}"
+KIT_REF="${DEPLOY_KIT_REF:-$(git -C /opt/deploy-kit tag --sort=-v:refname | grep -m1 -E '^v[0-9]+\.[0-9]+\.[0-9]+$')}"
+git -C /opt/deploy-kit checkout -q "$KIT_REF"
+log "deploy-kit @ /opt/deploy-kit (pinned ${KIT_REF})"
 
 log "node ${NODE_MAJOR:-24} (system, NodeSource; patched by unattended-upgrades) for theme/app builds"
 # Not nvm in /root: an app user must be able to run it, and nvm gets no security patches.
@@ -92,7 +96,7 @@ log "wordpress hardening (cloudflare real-ip, wp-login rate limit, xmlrpc block)
 # and re-running it is how the Cloudflare ranges get refreshed.
 bash /opt/deploy-kit/provision/harden.sh
 
-log "host baseline (TLS 1.2+, catch-all, gzip, timed log, auto-reboot, journald cap, PHP limits)"
+log "host baseline (TLS 1.2+, catch-all, gzip, timed log, auto-reboot, journald cap, PHP limits, swap, firewall)"
 # Same script an already-running box uses, so a fresh droplet and a long-lived one end
 # up identical — provision/audit.sh checks the result.
 bash /opt/deploy-kit/provision/baseline.sh
@@ -106,4 +110,4 @@ if nginx -t 2>&1 | grep -q 'no "fastcgi_cache_key"'; then
   exit 1
 fi
 systemctl reload nginx
-log "BASE DONE (php ${PHP_VER}). NEXT: run 'mysql_secure_installation', then new-site.sh per site."
+log "BASE DONE (php ${PHP_VER}, kit ${KIT_REF}). NEXT: ssh-admin.sh, then new-site.sh per site (docs/new-site-runbook.md)."

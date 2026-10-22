@@ -39,61 +39,13 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    log). See **[docs/new-site-runbook.md](docs/new-site-runbook.md)** for the end-to-end
    lifecycle.
 
-   **Host baseline + drift check (v1.13).** `baseline.sh` brings a box (fresh, via
-   `provision-base.sh`, or already running) to the host baseline:
-   - TLS 1.2+ only, `server_tokens off`, gzip for text assets, `log_format timed`;
-   - a catch-all `default_server` that refuses unknown hosts at the handshake;
-   - unattended-upgrades that reboot when required and take PHP patches from the PPA;
-   - a journald cap and PHP-FPM limits.
-
-   Idempotent, backed up, and validated before any reload. `audit.sh` is the read-only
-   check of the same list. It exits 1 on drift, and `test/` proves each check fails on an
-   un-hardened box. Also new:
-   - `backup.sh --healthchecks <conf> <env-file>`: a dead-man's switch for the nightly backup;
-   - `fail2ban-direct.sh <host> --name <n>`: a scanner ban, for hosts NOT behind Cloudflare only;
-   - `fpm-pools.sh --user` joins pool users to `mailrelay` when the box has one.
-
-   **Per-pool users (v1.12, opt-in).** Separate pools stop sites competing for workers;
-   they do not stop one site's PHP reading another's `wp-config-env.php`, because every
-   pool runs as `www-data`. `fpm-pools.sh --user U --staging-user U` gives each pool its
-   own no-login user, and `POOL_USER[branch]` in the site conf makes the rest agree: deploys
-   chown to it and lock secrets to its group, and wp-cron and the smoke test run as it. The
-   smoke test must run as the pool user, or it cannot read the env file and passes as
-   "not installed, skipped". Mail: `MAIL_GROUP` / `MAIL_TEST_USER` for `mail.sh`, so a
-   shared relay config stays readable by every pool that sends. Without `POOL_USER`,
-   everything stays `www-data`, exactly as before. Releases can also link per-branch
-   extra paths from `shared/` (`SHARED_EXTRA`, e.g. a Redis drop-in). `backup.sh` resolves
-   a symlinked uploads dir first, because restic stores a symlink as a symlink.
-
-   **In-place → releases migration (v1.14).** `migrate-to-releases.sh` moves one branch
-   of a live site onto `LAYOUT=releases`. `--prepare` builds `shared/` and the first
-   release while nginx still serves the old docroot; `--switch` is the one live moment
-   (final rsync, vhost to `<base>/current`, conf installed, smoke test that rolls back on
-   failure); `--rollback` restores the vhost and conf. The old docroot is never touched.
-
-   **Admin user + SSH settings (v1.15, opt-in).** `ssh-admin.sh --user <name> --key <file>`
-   adds a key-only sudo user (NOPASSWD, so `ssh <host> sudo …` stays scriptable);
-   `--no-x11` turns X11 forwarding off; `--lock-root` sets `PermitRootLogin
-   forced-commands-only`, so only the CI deploy keys still reach root. It refuses until a
-   sudo user has a key, and lists the root keys that will stop working. Settings live in
-   `sshd_config.d/10-deploy-kit.conf`, and `sshd -t` must pass or the old file returns.
-   `audit.sh` adds `sec.admin` and `sec.x11`.
-
-   **Next.js without root (v1.16, opt-in).** `node.sh --major 24` installs system Node from
-   NodeSource's signed repo and lets unattended-upgrades patch it. `nextjs-service.sh <unit>
-   --user U --dir D --port P` writes a hardened systemd unit (only `D/.next` writable, no
-   `/home`, read-only system) and the no-login user. The `nextjs` profile takes per-branch
-   `APP_USER`, `SYSTEMD_UNIT`, `PORT`, `SITE_URL`, `POST_DEPLOY`: it builds as the app user,
-   locks `.env*` to `640 root:<user>`, stops before restarting if the build fails, and
-   smoke-tests `127.0.0.1:PORT`. `audit.sh` adds `os.noderoot`. Without `APP_USER`, the old
-   root build and `PM2_APP` still work.
-
-   **Next.js on releases (v1.18, opt-in).** `LAYOUT[b]=releases` now works for `nextjs`: each
-   deploy builds in `releases/<stamp>` as the app user while the live one keeps serving;
-   `shared/.env.production` is linked in; the release is root-owned except `.next/` (ISR +
-   image cache), and `node_modules` stays. Switch, restart, localhost smoke test, switch back
-   on failure, `rollback.sh`. `releases.sh` gained profile hooks (`profile_user`, `_finalize`,
-   `_check`, `_smoke`, `_after`) whose defaults are the WordPress behavior.
+   **The host standard** (what `provision-base.sh` + `new-site.sh` give a new box and site):
+   TLS 1.2+, a catch-all that refuses unknown hosts, unattended patches with reboots, swap,
+   ufw + fail2ban (`baseline.sh`); a key-only sudo admin with root SSH left to the CI keys
+   (`ssh-admin.sh`); a PHP user and pool per environment; atomic read-only releases with
+   auto-rollback; WP-Cron from timers; monitored off-site backups. `audit.sh` is the
+   read-only drift check of all of it, host-wide and per site. The release history is in
+   **[CHANGELOG.md](CHANGELOG.md)**.
 
 ## Consume it (per site)
 
@@ -113,16 +65,17 @@ jobs:
 ```
 (Secrets are still set per-repo — the reusable workflow only centralizes the *logic*.)
 
-**Droplet side** — write the site config, then wire the hook:
+**Droplet side** — `provision/new-site.sh` writes the site conf and wires the hook (see the
+runbook). For a bare repo that already exists, write `/etc/deploy-kit/<site>.conf` from
+`config/site.conf.example`, then:
 ```bash
-# 1. cp config/site.conf.example -> /etc/deploy-kit/<site>.conf and edit
-# 2. install kit + wire the bare repo's post-receive:
-sudo bash provision/setup-droplet.sh <site> /etc/deploy-kit/<site>.conf v1.8
+sudo bash provision/setup-droplet.sh <site> /etc/deploy-kit/<site>.conf          # keeps the box's pin
+sudo bash provision/setup-droplet.sh <site> /etc/deploy-kit/<site>.conf <tag>    # rolls it
 ```
-The old hook is backed up to `*.bak.*`. `deploy-kit` is pinned per droplet at a tag,
-so an update to this repo is a **deliberate roll** (`checkout` a new tag), never an
-instant fleet-wide change. Break-glass: the backup hook (or `git push droplet`) still
-works if the kit is ever unavailable.
+The old hook is backed up to `*.bak.*`. `deploy-kit` is one checkout per droplet, pinned at a
+tag, so an update to this repo is a **deliberate roll** that moves every site on that box —
+never an instant fleet-wide change, and never a side effect of adding a site. Break-glass:
+the backup hook (or `git push droplet`) still works if the kit is ever unavailable.
 
 ## Docs
 

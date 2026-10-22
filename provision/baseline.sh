@@ -1,7 +1,8 @@
 #!/bin/bash
 # deploy-kit — apply the host baseline to a droplet, fresh or already running. As root.
 #
-#     baseline.sh [--reboot-time HH:MM] [--php-memory 256M] [--php-upload 64M] [--journal 500M] [--no-firewall]
+#     baseline.sh [--reboot-time HH:MM] [--php-memory 256M] [--php-upload 64M] [--journal 500M]
+#                 [--swap 2G] [--no-firewall]
 #
 # What it owns (provision/audit.sh checks the same list):
 #   nginx.conf      TLS 1.2+ only, server_tokens off, gzip for text assets, `log_format
@@ -11,6 +12,8 @@
 #                   old kernels, and takes PHP patches from the ondrej PPA when it is used
 #   journald        size cap
 #   PHP-FPM         conf.d/99-local.ini: memory_limit and upload limits
+#   swap            a swapfile (--swap, default 2G; 0 skips) when the box has none,
+#                   and vm.swappiness=10
 #   firewall        ufw: inbound denied except SSH and HTTP/HTTPS (SSH opened before enable);
 #                   fail2ban on with Ubuntu's sshd jail. Skip with --no-firewall.
 #
@@ -24,13 +27,14 @@ KIT="${KIT:-/opt/deploy-kit}"
 source "$KIT/provision/lib/baseline.sh"
 log(){ echo ">> $*"; }
 
-REBOOT_AT="09:00"; PHP_MEM="256M"; PHP_UP="64M"; JOURNAL="500M"; FIREWALL=1
+REBOOT_AT="09:00"; PHP_MEM="256M"; PHP_UP="64M"; JOURNAL="500M"; SWAP="2G"; FIREWALL=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --reboot-time) REBOOT_AT="${2:?}"; shift ;;
     --php-memory)  PHP_MEM="${2:?}"; shift ;;
     --php-upload)  PHP_UP="${2:?}"; shift ;;
     --journal)     JOURNAL="${2:?}"; shift ;;
+    --swap)        SWAP="${2:?}"; shift ;;
     --no-firewall) FIREWALL=0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -109,6 +113,9 @@ for d in /etc/php/*/fpm; do
   [ -d "$d" ] || continue
   if render_php_local "$PHP_MEM" "$PHP_UP" | write_if_changed "$d/conf.d/99-local.ini"; then CHANGED_FPM=1; fi
 done
+
+# --- swap -------------------------------------------------------------------------------
+[ "$SWAP" = 0 ] || apply_swap "$SWAP" | sed 's/^/   /'
 
 # --- firewall + fail2ban ----------------------------------------------------------------
 [ "$FIREWALL" = 1 ] && apply_firewall | sed 's/^/   /'

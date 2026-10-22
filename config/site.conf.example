@@ -38,6 +38,15 @@ declare -A CACHE_DIR=(
 #   [develop]=avftb-stg
 # )
 
+# Optional — atomic, read-only release deploys (what new-site.sh writes for every new
+# site). DEPLOY_DIR for that branch must then be <base>/current, with <base>/shared/
+# holding wp-config-env.php and wp-content/{uploads,debug.log}. A live in-place site
+# moves with provision/migrate-to-releases.sh. Default: inplace.
+# declare -A LAYOUT=(
+#   [main]=releases
+#   [develop]=releases
+# )
+
 # Optional, LAYOUT=releases only — extra paths every release links from shared/,
 # space-separated, per branch. Production's Redis drop-in is the usual one; never share
 # it into staging (it would point staging at production's cache).

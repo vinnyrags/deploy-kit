@@ -9,7 +9,8 @@
 # no alerts (monitoring is parked by decision).
 #
 # Site-aware checks read /etc/deploy-kit/*.conf: each WordPress site's env file must be
-# 640 root:<its pool user> (POOL_USER, default www-data).
+# 640 root:<its pool user> (POOL_USER, default www-data), and each site needs what its
+# conf implies — a backup timer for production, WP-Cron timers, releases (audit_sites).
 set -uo pipefail
 
 KIT="${KIT:-/opt/deploy-kit}"
@@ -113,6 +114,31 @@ site_secrets() {
   done
 }
 
+# "<site> <branch> <profile> <layout>" for every deployed branch in every site conf.
+site_branches() {
+  local conf
+  for conf in /etc/deploy-kit/*.conf; do
+    [ -r "$conf" ] || continue
+    (
+      # shellcheck disable=SC1090
+      . "$conf" >/dev/null 2>&1
+      for b in "${!DEPLOY_DIR[@]}"; do
+        l="$(conf_map LAYOUT "$b")"
+        echo "$(basename "$conf" .conf) $b ${PROFILE:-} ${l:-inplace}"
+      done
+    )
+  done
+}
+
+# Enabled deploy-kit timer instances (list-timers is the only place template instances show).
+enabled_timers() {
+  local t
+  for t in $(systemctl list-timers --all --no-legend 'deploy-kit-*' 2>/dev/null | grep -oE 'deploy-kit-[^ ]+\.timer' | sort -u); do
+    systemctl is-enabled -q "$t" 2>/dev/null && echo "$t"
+  done
+  return 0
+}
+
 # --- run ------------------------------------------------------------------------------
 results="$(
   audit_nginx_test; audit_nginx_tls; audit_nginx_tokens; audit_nginx_gzip; audit_nginx_logformat
@@ -120,7 +146,8 @@ results="$(
   audit_os_autoreboot; audit_os_reboot_pending; audit_os_journald; audit_os_failed_units; audit_os_php_cli
   audit_php_pool_users; site_secrets | audit_php_secrets
   audit_mail_conf; audit_mail_readers
-  audit_security; audit_ssh_admin; audit_node_root; audit_backups
+  audit_security; audit_ssh_admin; audit_node_root; audit_backups; audit_os_swap
+  site_branches | audit_sites "$(enabled_timers)"
 )"
 
 printf '%s\n' "$results" | while IFS=$'\t' read -r s id msg; do

@@ -18,7 +18,14 @@ setup() {
   touch "$BASE/shared/wp-content/debug.log"
 
   # Stubs for everything outside releases.sh.
-  mkdir -p "$T/bin"; printf '#!/bin/sh\n[ -n "$WP_FAIL" ] && exit 1; exit 0\n' > "$T/bin/wp"; chmod +x "$T/bin/wp"
+  # wp: WP_FAIL = WordPress cannot load (WP-CLI prints an Error); WP_EMPTY = no tables yet.
+  mkdir -p "$T/bin"; cat > "$T/bin/wp" <<'W'
+#!/bin/sh
+[ -n "$WP_FAIL" ] && { echo "Error: Error establishing a database connection." >&2; exit 1; }
+[ -n "$WP_EMPTY" ] && case "$*" in *is-installed*) exit 1 ;; *) echo "Error: The site you have requested is not installed." >&2; exit 1 ;; esac
+exit 0
+W
+  chmod +x "$T/bin/wp"
   export PATH="$T/bin:$PATH"
   # The real helpers (log, conf_map, pool_user, lock_secrets) and the real mythus-ix
   # profile_shared_paths; only the build, activation and smoke test are stubbed.
@@ -70,6 +77,22 @@ live() { basename "$(readlink -f "$BASE/current")"; }
   WP_FAIL=1 run release_deploy develop "$BASE/current" staging "$(rev)"
   [ "$status" -ne 0 ]
   [ "$(live)" = "$before" ]
+}
+
+@test "a new site's first release switches before wp core install, if core is in the tree" {
+  mkdir -p "$T/work/wp"; echo "<?php" > "$T/work/wp/wp-load.php"
+  git -C "$T/work" add -A; git -C "$T/work" commit -qm core; git -C "$T/work" push -q origin HEAD:develop
+  WP_EMPTY=1 run release_deploy develop "$BASE/current" staging "$(rev)"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -L "$BASE/current" ]
+  [[ "$output" == *"WordPress not installed yet"* ]]
+}
+
+@test "an empty database does not excuse a release with no WordPress core" {
+  WP_EMPTY=1 run release_deploy develop "$BASE/current" staging "$(rev)"
+  [ "$status" -ne 0 ]
+  [ ! -e "$BASE/current" ]
 }
 
 @test "failed smoke test rolls back to the previous release" {

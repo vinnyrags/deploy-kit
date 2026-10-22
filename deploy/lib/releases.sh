@@ -115,8 +115,17 @@ release_deploy() {
   if declare -F profile_check >/dev/null; then
     profile_check "$rel" || { log "pre-switch check failed — release left unswitched: $rel"; return 1; }
   else
-    wp --path="$rel/wp" --allow-root --skip-plugins --skip-themes eval 'echo "ok";' >/dev/null \
-      || { log "pre-switch check failed — release left unswitched: $rel"; return 1; }
+    # A new site's first releases arrive before `wp core install`; WordPress cannot load
+    # an empty database, so check only that core is in the tree until it is installed.
+    case "$(wp_state "$rel/wp")" in
+      installed)
+        wp --path="$rel/wp" --allow-root --skip-plugins --skip-themes eval 'echo "ok";' >/dev/null \
+          || { log "pre-switch check failed — release left unswitched: $rel"; return 1; } ;;
+      not-installed)
+        [ -f "$rel/wp/wp-load.php" ] || { log "pre-switch check failed: no wp/wp-load.php — release left unswitched: $rel"; return 1; }
+        log "WordPress not installed yet: checked core is present, not that it loads" ;;
+      *) log "pre-switch check failed: WordPress cannot reach its database — release left unswitched: $rel"; return 1 ;;
+    esac
   fi
 
   release_switch "$base" "$rel"

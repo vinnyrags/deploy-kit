@@ -121,16 +121,44 @@ nginx_ensure_log_format() {
 #   ufw: deny inbound, allow outbound, open SSH and HTTP/HTTPS — SSH is allowed BEFORE ufw is
 #   enabled, so this can never cut off the session running it. fail2ban installed and on, with
 #   Ubuntu's stock sshd jail (defaults-debian.conf). Idempotent: an active ufw is not
-#   re-enabled; existing rules (e.g. fail2ban-direct.sh's) are kept. Prints what it did.
+#   re-enabled; existing rules (e.g. fail2ban-direct.sh's) are kept. Web ports are opened
+#   only when no rule mentions them yet: a box whose ufw admits only Cloudflare's ranges
+#   would otherwise get an allow-from-anywhere rule that silently voids the lock.
 apply_firewall() {
   if ! command -v ufw >/dev/null; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw >/dev/null; echo "installed ufw"; fi
   if ! command -v fail2ban-client >/dev/null; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null; echo "installed fail2ban"; fi
   ufw allow OpenSSH >/dev/null
-  if ufw app list 2>/dev/null | grep -q 'Nginx Full'; then ufw allow 'Nginx Full' >/dev/null; else ufw allow 80,443/tcp >/dev/null; fi
+  if ufw status 2>/dev/null | grep -qE '^(80|443|80,443)(/tcp)?[[:space:]]|^Nginx (Full|HTTP|HTTPS)'; then
+    echo "web rules present, left alone"
+  elif ufw app list 2>/dev/null | grep -q 'Nginx Full'; then ufw allow 'Nginx Full' >/dev/null
+  else ufw allow 80,443/tcp >/dev/null; fi
   ufw default deny incoming >/dev/null
   ufw default allow outgoing >/dev/null
   if ufw status | grep -q 'Status: active'; then echo "ufw already active"
   else ufw --force enable >/dev/null; echo "ufw enabled (SSH + HTTP/HTTPS open)"; fi
   systemctl enable --now fail2ban >/dev/null 2>&1
   echo "fail2ban on"
+}
+
+# apply_swap <size, e.g. 2G>
+#   A swapfile when the box has no swap at all, plus vm.swappiness=10 so it is a cushion
+#   for a memory spike (a composer run during a deploy) rather than routine paging. A 1 GB
+#   droplet running two WordPress installs and a build OOMs without one. Existing swap of any kind is left alone. SWAPFILE, FSTAB and
+#   SYSCTL_FILE are overridable for the tests. Prints what it did.
+apply_swap() {
+  local size="$1" file="${SWAPFILE:-/swapfile}" fstab="${FSTAB:-/etc/fstab}" sysctl="${SYSCTL_FILE:-/etc/sysctl.d/60-deploy-kit-swap.conf}"
+  if [ -n "$(swapon --show --noheadings 2>/dev/null)" ]; then
+    echo "swap present"
+  else
+    fallocate -l "$size" "$file" && chmod 600 "$file" && mkswap "$file" >/dev/null && swapon "$file"
+    echo "swapfile ${file} (${size}) on"
+  fi
+  if [ -f "$file" ] && ! grep -qE "^[[:space:]]*${file}[[:space:]]" "$fstab"; then
+    echo "${file} none swap sw 0 0" >> "$fstab"; echo "fstab: ${file}"
+  fi
+  if [ "$(cat "$sysctl" 2>/dev/null)" != "vm.swappiness = 10" ]; then
+    echo "vm.swappiness = 10" > "$sysctl"
+    sysctl -q -p "$sysctl" 2>/dev/null || true
+    echo "vm.swappiness = 10"
+  fi
 }

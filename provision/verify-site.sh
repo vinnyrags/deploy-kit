@@ -215,12 +215,27 @@ check_env() { # check_env <host> <docroot> <label>
   esac
 }
 
+# Docroot and pool user per environment come from the site conf (DEPLOY_DIR, POOL_USER),
+# so a releases site is checked at <base>/current as the user that can read its env file.
+# Without a conf: the in-place convention new-site.sh used before releases.
+conf_get() { # conf_get <map> <branch>
+  [ -r "$SITE_CONF" ] || return 0
+  # shellcheck disable=SC1090
+  ( . "$SITE_CONF" >/dev/null 2>&1; declare -p "$1" >/dev/null 2>&1 || exit 0; declare -n m="$1"; printf '%s' "${m[$2]:-}" )
+}
+run_env() { # run_env <branch> <host> <label>
+  local root user
+  root="$(conf_get DEPLOY_DIR "$1")"; root="${root:-/var/www/${2}/public}"
+  user="$(conf_get POOL_USER "$1")"
+  WP_USER="${user:-www-data}" check_env "$2" "$root" "$3"
+}
+
 echo "deploy-kit verify — ${SLUG} (${DOMAIN})"
 case "$WANT_ENV" in
-  prod)    check_env "$DOMAIN" "/var/www/${DOMAIN}/public" "production" ;;
-  staging) check_env "staging.${DOMAIN}" "/var/www/staging.${DOMAIN}/public" "staging" ;;
-  both)    check_env "$DOMAIN" "/var/www/${DOMAIN}/public" "production"
-           check_env "staging.${DOMAIN}" "/var/www/staging.${DOMAIN}/public" "staging" ;;
+  prod)    run_env main "$DOMAIN" "production" ;;
+  staging) run_env develop "staging.${DOMAIN}" "staging" ;;
+  both)    run_env main "$DOMAIN" "production"
+           run_env develop "staging.${DOMAIN}" "staging" ;;
   *) echo "--env must be prod|staging|both" >&2; exit 2 ;;
 esac
 

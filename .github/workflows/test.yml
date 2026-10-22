@@ -14,6 +14,6 @@ jobs:
       - name: Install bats + shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y -qq bats shellcheck
       - name: shellcheck (errors only)
-        run: shellcheck -S error deploy/deploy.sh deploy/lib/*.sh deploy/profiles/*.sh bin/rollback.sh provision/backup.sh provision/wp-cron.sh
+        run: shellcheck -S error deploy/deploy.sh deploy/lib/*.sh deploy/profiles/*.sh bin/rollback.sh bin/onboard.sh provision/backup.sh provision/wp-cron.sh provision/new-site.sh provision/lib/site.sh provision/setup-droplet.sh provision/verify-site.sh
       - name: bats
         run: sudo -E bats test/

@@ -1,5 +1,6 @@
 # deploy-kit — PHP-FPM pool helpers. Sourced by provision/fpm-pools.sh and the tests.
-# Pure functions: they print or rewrite files and touch no services.
+# render_pool and rewire_vhost_socket only print or rewrite files; ensure_user creates
+# the account, and is shared with new-site.sh, which needs the users before the pools.
 
 # render_pool <pool_name> <php_ver> <prod|staging> [max_children] [user]
 #   prod:    pm=dynamic, max_children default 6 — sized for ~70 MB per worker.
@@ -60,4 +61,20 @@ rewire_vhost_socket() {
   n="$(grep -cE "fastcgi_pass[[:space:]]+unix:/run/php/php${ver//./\\.}-fpm[^;]*\.sock;" "$file" || true)"
   sed -E -i "s#(fastcgi_pass[[:space:]]+)unix:/run/php/php${ver//./\\.}-fpm[^;]*\.sock;#\1${want};#g" "$file"
   echo "$n"
+}
+
+# A pool whose user does not exist fails php-fpm -t; create it as a system account that
+# cannot log in and owns nothing yet.
+ensure_user() {
+  [ "$1" = www-data ] && return 0
+  if ! id -u "$1" >/dev/null 2>&1; then
+    useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1"
+    echo ">> created system user $1"
+  fi
+  # A pool user must be able to read the mail relay config, or that site's web mail
+  # fails silently (mail.sh MAIL_GROUP). Join it when the box has one; the reload that
+  # follows gives the new workers the group.
+  if getent group mailrelay >/dev/null && ! id -nG "$1" | tr ' ' '\n' | grep -qx mailrelay; then
+    usermod -aG mailrelay "$1"; echo ">> added $1 to mailrelay"
+  fi
 }
