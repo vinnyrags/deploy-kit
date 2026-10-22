@@ -3,5 +3,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 docker run --rm -v "$PWD:/kit:ro" ubuntu:24.04 bash -c '
-  apt-get update -qq >/dev/null && apt-get install -y -qq bats git nginx php8.3-fpm >/dev/null 2>&1
+  apt-get update -qq >/dev/null && apt-get install -y -qq bats git nginx php8.3-fpm openssh-server sudo >/dev/null 2>&1
   cp -r /kit /tmp/kit && cd /tmp/kit && bats test/'

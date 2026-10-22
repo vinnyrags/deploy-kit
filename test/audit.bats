@@ -83,3 +83,14 @@ status_of() { "$@" | cut -f1 | sort -u | tr '\n' ' ' | sed 's/ $//'; }
   run bash -n "$KIT/provision/audit.sh"
   [ "$status" -eq 0 ]
 }
+
+@test "sec.admin: WARN until a sudo user has a key AND a sudoers rule" {
+  mkdir -p "$AUDIT_ROOT/etc/sudoers.d" "$AUDIT_ROOT/home/ops/.ssh"
+  printf 'root:x:0:0::/root:/bin/bash\nops:x:1000:1000::/home/ops:/bin/bash\n' > "$AUDIT_ROOT/etc/passwd"
+  printf 'sudo:x:27:ops\n' > "$AUDIT_ROOT/etc/group"
+  [ "$(status_of audit_ssh_admin)" = WARN ]                       # in sudo, no key
+  echo 'ssh-ed25519 AAAA ops' > "$AUDIT_ROOT/home/ops/.ssh/authorized_keys"
+  [ "$(status_of audit_ssh_admin)" = WARN ]                       # key, no sudoers rule
+  echo 'ops ALL=(ALL) NOPASSWD:ALL' > "$AUDIT_ROOT/etc/sudoers.d/90-deploy-kit-ops"
+  [ "$(status_of audit_ssh_admin)" = PASS ]
+}

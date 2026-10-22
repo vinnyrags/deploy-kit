@@ -126,3 +126,17 @@ audit_mail_conf() {
     *)       emit FAIL mail.conf "msmtprc mode $m — relay credential readable by others" ;;
   esac
 }
+
+# --- ssh ----------------------------------------------------------------------------
+# A human admin: a sudo-group user with a non-empty authorized_keys and a sudoers rule
+# (provision/ssh-admin.sh). Without one, humans can only log in as root.
+audit_ssh_admin() {
+  local members u home found=""
+  members="$(awk -F: '$1=="sudo"{print $4}' "$(r /etc/group)" 2>/dev/null | tr ',' ' ')"
+  for u in $members; do
+    home="$(awk -F: -v u="$u" '$1==u{print $6}' "$(r /etc/passwd)")"
+    [ -s "$(r "$home/.ssh/authorized_keys")" ] && grep -qs "^$u " "$(r /etc/sudoers.d)"/* && found="$found $u"
+  done
+  [ -n "$found" ] && emit PASS sec.admin "sudo user with a key:$found" \
+    || emit WARN sec.admin "no sudo user with an SSH key — humans log in as root (ssh-admin.sh --user)"
+}

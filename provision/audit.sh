@@ -52,6 +52,8 @@ audit_security() {
     no|forced-commands-only) emit PASS sec.sshroot "root SSH restricted" ;;
     *) emit WARN sec.sshroot "root can log in interactively (keys only) — humans should use a sudo user" ;;
   esac
+  [ "$(sshd -T 2>/dev/null | awk '/^x11forwarding /{print $2}')" = no ] \
+    && emit PASS sec.x11 "SSH X11 forwarding off" || emit WARN sec.x11 "SSH X11 forwarding on (ssh-admin.sh --no-x11)"
 }
 
 audit_backups() {
@@ -110,7 +112,7 @@ results="$(
   audit_os_autoreboot; audit_os_reboot_pending; audit_os_journald; audit_os_failed_units; audit_os_php_cli
   audit_php_pool_users; site_secrets | audit_php_secrets
   audit_mail_conf; audit_mail_readers
-  audit_security; audit_backups
+  audit_security; audit_ssh_admin; audit_backups
 )"
 
 printf '%s\n' "$results" | while IFS=$'\t' read -r s id msg; do

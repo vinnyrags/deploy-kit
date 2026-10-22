@@ -71,6 +71,14 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    (final rsync, vhost to `<base>/current`, conf installed, smoke test that rolls back on
    failure); `--rollback` restores the vhost and conf. The old docroot is never touched.
 
+   **Admin user + SSH settings (v1.15, opt-in).** `ssh-admin.sh --user <name> --key <file>`
+   adds a key-only sudo user (NOPASSWD, so `ssh <host> sudo …` stays scriptable);
+   `--no-x11` turns X11 forwarding off; `--lock-root` sets `PermitRootLogin
+   forced-commands-only`, so only the CI deploy keys still reach root. It refuses until a
+   sudo user has a key, and lists the root keys that will stop working. Settings live in
+   `sshd_config.d/10-deploy-kit.conf`, and `sshd -t` must pass or the old file returns.
+   `audit.sh` adds `sec.admin` and `sec.x11`.
+
 ## Consume it (per site)
 
 **GitHub side** — the site's `.github/workflows/deploy.yml`:
