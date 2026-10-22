@@ -69,7 +69,7 @@ teardown() { rm -rf "$T" /etc/systemd/system/svctest.service; userdel svcuser 2>
 
 @test "nextjs-service: creates a no-login user and a unit systemd-analyze accepts" {
   mkdir -p "$DEST/.next"
-  run env SYSTEMCTL=true NODE_BIN=/bin/true bash "$KIT/provision/nextjs-service.sh" svctest --user svcuser --dir "$DEST" --port 3009
+  run env SYSTEMCTL=systemctl NODE_BIN=/bin/true bash "$KIT/provision/nextjs-service.sh" svctest --user svcuser --dir "$DEST" --port 3009
   [ "$status" -eq 0 ]
   [ "$(getent passwd svcuser | cut -d: -f6,7)" = "/var/lib/svcuser:/usr/sbin/nologin" ]
   f=/etc/systemd/system/svctest.service
@@ -77,7 +77,16 @@ teardown() { rm -rf "$T" /etc/systemd/system/svctest.service; userdel svcuser 2>
   grep -qx 'ProtectSystem=strict' "$f"
   grep -qx "ReadWritePaths=$DEST/.next" "$f"
   grep -qx "ExecStart=/bin/true $DEST/node_modules/next/dist/bin/next start -p 3009" "$f"
-  [[ "$output" == *"enabled, not started"* ]]
+  [[ "$output" == *"installed, not enabled or started"* ]]
+  ! grep -q 'enable' "$CALLS"   # an enabled unit would start on reboot and fight PM2 for the port
+}
+
+@test "nextjs-service --start enables and starts" {
+  mkdir -p "$DEST/.next"
+  run env SYSTEMCTL=systemctl NODE_BIN=/bin/true bash "$KIT/provision/nextjs-service.sh" svctest --user svcuser --dir "$DEST" --port 3009 --start
+  [ "$status" -eq 0 ]
+  grep -qx 'systemctl enable svctest.service' "$CALLS"
+  grep -qx 'systemctl restart svctest.service' "$CALLS"
 }
 
 @test "nextjs-service refuses root and a non-numeric port" {

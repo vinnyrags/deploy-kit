@@ -8,8 +8,9 @@
 # writes /etc/systemd/system/<unit>.service: the app runs as that user, may write only
 # <dir>/.next (ISR and image cache), and sees a read-only system and no /home. One process —
 # a cluster buys nothing on a 1-vCPU box. Idempotent; `systemd-analyze verify` must pass,
-# or the previous unit is restored. --start enables and (re)starts it; without it the
-# unit is installed and enabled only, so a PM2 process on the same port isn't fought.
+# or the previous unit is restored. --start enables and (re)starts it. Without it the unit
+# is installed but NOT enabled: an enabled unit would start on the next (automatic) reboot
+# and fight whatever still holds the port, e.g. the PM2 app it is replacing.
 set -euo pipefail
 
 UNIT_DIR="${UNIT_DIR:-/etc/systemd/system}"
@@ -81,10 +82,10 @@ rm -f "$f.bak"
 log "unit $f"
 
 $SYSTEMCTL daemon-reload
-$SYSTEMCTL enable "$UNIT.service" >/dev/null 2>&1
 if [ "$START" = 1 ]; then
+  $SYSTEMCTL enable "$UNIT.service" >/dev/null 2>&1
   $SYSTEMCTL restart "$UNIT.service"
-  log "started $UNIT.service"
+  log "enabled and started $UNIT.service"
 else
-  log "enabled, not started (pass --start once the port is free)"
+  log "installed, not enabled or started (pass --start once the port is free)"
 fi
