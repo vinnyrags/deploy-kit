@@ -57,7 +57,9 @@ teardown() {
 }
 
 @test "--lock-root refuses while no sudo user has a key" {
-  run bash "$S" --lock-root
+  # an empty sudoers dir: CI runners ship a real admin (runner, NOPASSWD), a bare box does not
+  mkdir -p "$BATS_TEST_TMPDIR/sudoers.d"
+  SUDOERS_DIR="$BATS_TEST_TMPDIR/sudoers.d" run bash "$S" --lock-root
   [ "$status" -ne 0 ]
   [[ "$output" == *"refusing --lock-root"* ]]
   [ ! -f /etc/ssh/sshd_config.d/10-deploy-kit.conf ]
