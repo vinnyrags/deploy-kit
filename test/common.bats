@@ -34,3 +34,25 @@ teardown() { rm -rf "$T"; }
   run lock_secrets "$T" dkcommon
   [ "$status" -eq 0 ]
 }
+
+@test "smoke_test: a fatal in the theme fails the deploy, even though it breaks reading home" {
+  # wp: installed; `option get home` works only with --skip-themes (the theme fatals).
+  mkdir -p "$T/bin" "$T/site/wp"; touch "$T/site/wp/wp-load.php"; chmod 755 "$T" "$T/bin"
+  cat > "$T/bin/wp" <<'W'
+#!/bin/sh
+case "$*" in
+  *is-installed*) exit 0 ;;
+  *"option get home"*--skip-themes*) echo https://example.com ;;
+  *"option get home"*) echo "PHP Fatal error: Uncaught Error: Call to undefined function" >&2; exit 255 ;;
+esac
+W
+  printf '#!/bin/sh\nwhile [ "$1" = -u ]; do shift 2; done\nexec "$@"\n' > "$T/bin/sudo"
+  printf '#!/bin/sh\necho "${CURL_CODE:-500}"\n' > "$T/bin/curl"
+  chmod +x "$T/bin"/*; export PATH="$T/bin:$PATH"
+  run smoke_test "$T/site" staging dkcommon
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"SMOKE TEST FAILED: example.com returned 500"* ]]
+  CURL_CODE=200 run smoke_test "$T/site" staging dkcommon
+  [ "$status" -eq 0 ]
+}

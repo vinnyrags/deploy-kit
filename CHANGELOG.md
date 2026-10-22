@@ -21,6 +21,12 @@ What each release added, newest first. Per-droplet pins are kept privately, not 
   after `--lock-root`; a re-run replaces the key instead of keeping a stale one; and the
   workflow it writes gates the deploy on `composer audit --locked` (`COMPOSER_AUTH_FILE`).
 - `verify-site.sh` reads each environment's docroot and pool user from the site conf.
+- **Smoke test fix (affects every earlier version):** it read `home` through WP-CLI with the
+  theme loaded, so a fatal in the theme made it log "could not resolve home_url, skipped" and
+  pass — a 500 left live behind a green deploy and no rollback. It now reads `home` with
+  `--skip-themes --skip-plugins`, and an installed site whose home cannot be read fails.
+  Found on the v1.19 rehearsal droplet.
+- `new-site.sh` retires the distro's `[www]` pool once nothing uses it.
 
 ## v1.18 — Next.js on releases
 `LAYOUT[b]=releases` now works for `nextjs`: each

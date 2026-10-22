@@ -134,9 +134,12 @@ smoke_test() {
     *) log "SMOKE TEST FAILED: WordPress cannot load as ${user} (database, or ${user} cannot read wp-config-env.php)" >&2; return 1 ;;
   esac
 
+  # Read home without the theme and plugins: a fatal in either is exactly what this test
+  # exists to catch, and loading them here once turned that fatal into "could not resolve
+  # home_url, skipped" — a 500 left live with a green deploy (kit rehearsal, 2026-10-22).
   local home host scheme port codenum
-  home="$( cd "$dest" && $wp option get home 2>/dev/null )"
-  [ -n "$home" ] || { log "smoke: could not resolve home_url, skipped"; return 0; }
+  home="$( cd "$dest" && $wp option get home --skip-themes --skip-plugins 2>/dev/null )"
+  [ -n "$home" ] || { log "SMOKE TEST FAILED: WordPress is installed but its home URL cannot be read" >&2; return 1; }
   host="${home#*://}"; host="${host%%/*}"
   scheme=https; port=443
   [ -d "/etc/letsencrypt/live/${host}" ] || { scheme=http; port=80; }

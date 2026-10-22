@@ -141,6 +141,10 @@ fi
 # default socket. Runs after the cache-key check because fpm-pools.sh reloads nginx itself.
 KIT="$KIT" bash "$KIT/provision/fpm-pools.sh" "$SLUG" "$PHP_VER" --prod "$DOMAIN" --staging "$STG_DOMAIN" \
   --user "$PUSER" --staging-user "$SUSER" ${MAX:+--max "$MAX"}
+# The distro's shared [www] pool runs as www-data; once no vhost uses its socket it is
+# only an idle identity for audit.sh to flag. It refuses while anything still uses it.
+KIT="$KIT" bash "$KIT/provision/fpm-pools.sh" --retire-default "$PHP_VER" >/dev/null 2>&1 \
+  && log "retired the default [www] pool" || log "default [www] pool still in use — left alone"
 systemctl reload nginx
 
 # WP-Cron from a timer. Starting it now is safe: until WordPress is installed each run

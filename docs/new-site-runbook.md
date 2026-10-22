@@ -6,9 +6,11 @@ releases, deploys only through GitHub Actions, root SSH for CI only, baseline + 
 monitored off-site backups. Each step names the script that does it. **(manual)** marks the
 steps no script can do.
 
-> Status: the kit-v1.19 path is tested in the kit's container suite, not yet end-to-end on a
-> throwaway droplet. 3 Summers of Lincoln proved the older in-place path (kit `v1.1`,
-> 2026-09-28). Do the throwaway run before the next client site depends on it.
+> Status: rehearsed end to end on a throwaway droplet on 2026-10-22 (kit v1.19): base, admin
+> user, `new-site.sh`, first deploys before install, install, rollback of a broken release,
+> `verify-site.sh` 22/0, audit (only `site.backup` failing, as designed), root lock and
+> `onboard.sh` through the admin user. Not covered: TLS, Cloudflare and backups, which need a
+> real domain and credentials.
 
 ## Before the droplet — the code (your Mac)
 1. Scaffold the child theme from **Ena** (`bin/rename`); wire `composer.json` to satis + ACF;
