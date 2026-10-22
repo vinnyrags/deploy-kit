@@ -1,7 +1,7 @@
 #!/bin/bash
 # deploy-kit — BASE droplet provisioning. Brings a fresh Ubuntu 24.04 droplet to the
 # canonical ARTHOUSE spec, matching the View reference box:
-#   nginx 1.24 + php-fpm + mariadb 10.11 + git + node(nvm) + composer + wp-cli,
+#   nginx 1.24 + php-fpm + mariadb 10.11 + git + system node (node.sh) + composer + wp-cli,
 #   the nginx cache dir + drop-default vhost + the wp-fastcgi-cache include,
 #   /var/repo, /etc/deploy-kit, and deploy-kit itself at /opt/deploy-kit.
 # Idempotent. Run once per droplet, as root.
@@ -52,12 +52,6 @@ command -v wp >/dev/null || {
   chmod +x /usr/local/bin/wp
 }
 
-log "node via nvm (for the child theme npm build)"
-if [ ! -s /root/.nvm/nvm.sh ]; then
-  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-fi
-export NVM_DIR=/root/.nvm; . "$NVM_DIR/nvm.sh"; nvm install --lts >/dev/null 2>&1 || true
-
 log "dirs + nginx base"
 mkdir -p /var/cache/nginx /var/repo /etc/deploy-kit
 rm -f /etc/nginx/sites-enabled/default   # the catch-all from baseline.sh replaces it
@@ -88,6 +82,10 @@ log "deploy-kit @ /opt/deploy-kit (pinned ${DEPLOY_KIT_REF:-main})"
 [ -d /opt/deploy-kit/.git ] || git clone -q https://github.com/vinnyrags/deploy-kit /opt/deploy-kit
 git -C /opt/deploy-kit fetch -q --tags origin
 git -C /opt/deploy-kit checkout -q "${DEPLOY_KIT_REF:-main}"
+
+log "node ${NODE_MAJOR:-24} (system, NodeSource; patched by unattended-upgrades) for theme/app builds"
+# Not nvm in /root: an app user must be able to run it, and nvm gets no security patches.
+bash /opt/deploy-kit/provision/node.sh --major "${NODE_MAJOR:-24}"
 
 log "wordpress hardening (cloudflare real-ip, wp-login rate limit, xmlrpc block)"
 # Single source of truth — harden.sh is also the path for already-provisioned boxes,

@@ -88,3 +88,42 @@ teardown() { rm -rf "$T"; }
     [[ "$output" == PASS* ]]
   done
 }
+
+# apply_firewall — ufw/systemctl/apt-get are stubs that log their calls; a container can't
+# enable a real firewall. ufw "status" reports active once `--force enable` has run.
+fw_stubs() {
+  mkdir -p "$T/bin"; : > "$T/calls"
+  cat > "$T/bin/ufw" <<S
+#!/bin/sh
+echo "ufw \$*" >> "$T/calls"
+case "\$1" in
+  status) [ -f "$T/active" ] && echo "Status: active" || echo "Status: inactive" ;;
+  app) [ -n "\$NO_NGINX_PROFILE" ] || echo "  Nginx Full" ;;
+  --force) touch "$T/active" ;;
+esac
+S
+  printf '#!/bin/sh\necho "systemctl $*" >> "%s"\n' "$T/calls" > "$T/bin/systemctl"
+  printf '#!/bin/sh\necho "fail2ban-client $*" >> "%s"\n' "$T/calls" > "$T/bin/fail2ban-client"
+  chmod +x "$T/bin"/*; export PATH="$T/bin:$PATH"
+}
+
+@test "apply_firewall opens SSH before it enables ufw, and turns fail2ban on" {
+  fw_stubs
+  run apply_firewall
+  [ "$status" -eq 0 ]
+  ssh_line="$(grep -n 'ufw allow OpenSSH' "$T/calls" | cut -d: -f1)"
+  enable_line="$(grep -n 'ufw --force enable' "$T/calls" | cut -d: -f1)"
+  [ -n "$ssh_line" ] && [ -n "$enable_line" ] && [ "$ssh_line" -lt "$enable_line" ]
+  grep -qx "ufw allow Nginx Full" "$T/calls"
+  grep -qx "ufw default deny incoming" "$T/calls"
+  grep -qx "systemctl enable --now fail2ban" "$T/calls"
+}
+
+@test "apply_firewall does not re-enable an active ufw, and opens 80/443 without the nginx profile" {
+  fw_stubs; touch "$T/active"
+  NO_NGINX_PROFILE=1 run apply_firewall
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ufw already active"* ]]
+  ! grep -q 'ufw --force enable' "$T/calls"
+  grep -qx "ufw allow 80,443/tcp" "$T/calls"
+}

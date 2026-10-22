@@ -116,3 +116,21 @@ nginx_ensure_log_format() {
     { print }' "$file" > "$file.dk-tmp" && mv "$file.dk-tmp" "$file"
   echo added
 }
+
+# apply_firewall
+#   ufw: deny inbound, allow outbound, open SSH and HTTP/HTTPS — SSH is allowed BEFORE ufw is
+#   enabled, so this can never cut off the session running it. fail2ban installed and on, with
+#   Ubuntu's stock sshd jail (defaults-debian.conf). Idempotent: an active ufw is not
+#   re-enabled; existing rules (e.g. fail2ban-direct.sh's) are kept. Prints what it did.
+apply_firewall() {
+  if ! command -v ufw >/dev/null; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw >/dev/null; echo "installed ufw"; fi
+  if ! command -v fail2ban-client >/dev/null; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban >/dev/null; echo "installed fail2ban"; fi
+  ufw allow OpenSSH >/dev/null
+  if ufw app list 2>/dev/null | grep -q 'Nginx Full'; then ufw allow 'Nginx Full' >/dev/null; else ufw allow 80,443/tcp >/dev/null; fi
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  if ufw status | grep -q 'Status: active'; then echo "ufw already active"
+  else ufw --force enable >/dev/null; echo "ufw enabled (SSH + HTTP/HTTPS open)"; fi
+  systemctl enable --now fail2ban >/dev/null 2>&1
+  echo "fail2ban on"
+}
