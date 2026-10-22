@@ -88,6 +88,13 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    smoke-tests `127.0.0.1:PORT`. `audit.sh` adds `os.noderoot`. Without `APP_USER`, the old
    root build and `PM2_APP` still work.
 
+   **Next.js on releases (v1.18, opt-in).** `LAYOUT[b]=releases` now works for `nextjs`: each
+   deploy builds in `releases/<stamp>` as the app user while the live one keeps serving;
+   `shared/.env.production` is linked in; the release is root-owned except `.next/` (ISR +
+   image cache), and `node_modules` stays. Switch, restart, localhost smoke test, switch back
+   on failure, `rollback.sh`. `releases.sh` gained profile hooks (`profile_user`, `_finalize`,
+   `_check`, `_smoke`, `_after`) whose defaults are the WordPress behavior.
+
 ## Consume it (per site)
 
 **GitHub side** — the site's `.github/workflows/deploy.yml`:

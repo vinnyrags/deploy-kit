@@ -110,3 +110,50 @@ teardown() { rm -rf "$T" /etc/systemd/system/svctest.service; userdel svcuser 2>
   run bash "$KIT/provision/node.sh" --major abc --no-install
   [ "$status" -ne 0 ]
 }
+
+# --- LAYOUT=releases for nextjs ---------------------------------------------------------
+rel_setup() {
+  source "$KIT/deploy/lib/releases.sh"
+  export BASE="$T/site"; mkdir -p "$BASE/shared"; echo SECRET=1 > "$BASE/shared/.env.production"
+  mkdir -p "$T/work/node_stub"; echo x > "$T/work/node_stub/keep"
+}
+rel_rev() { git --git-dir="$BARE" rev-parse main; }
+rel_live() { basename "$(readlink -f "$BASE/current")"; }
+
+@test "releases: builds as APP_USER, keeps node_modules, code root-owned with a writable .next, switches + restarts" {
+  rel_setup
+  printf '#!/bin/bash\necho "npm $1 $(whoami)" >> "%s"\n[ "$1" = ci ] && mkdir -p node_modules/next && echo m > node_modules/next/x\n[ "$1" = run ] && { [ -n "$BUILD_FAIL" ] && exit 1; [ -n "$NO_BUILD_ID" ] || { mkdir -p .next; echo id > .next/BUILD_ID; }; }\nexit 0\n' "$CALLS" > "$T/bin/npm"
+  run release_deploy main "$BASE/current" production "$(rel_rev)"
+  [ "$status" -eq 0 ]
+  grep -qx 'npm run apptest' "$CALLS"
+  [ "$(readlink "$BASE/current/.env.production")" = "$BASE/shared/.env.production" ]
+  [ "$(stat -c '%a %U:%G' "$BASE/shared/.env.production")" = "640 root:apptest" ]
+  [ -f "$BASE/current/node_modules/next/x" ]                              # next start needs it
+  [ "$(stat -c '%U' "$BASE/current/package.json")" = root ]
+  [ "$(stat -c '%U' "$BASE/current/.next/BUILD_ID")" = apptest ]          # ISR + image cache
+  grep -qx 'systemctl restart app.service' "$CALLS"
+  grep -qx 'warm apptest https://app.example' "$CALLS"
+}
+
+@test "releases: a failed smoke test switches back to the previous release" {
+  rel_setup
+  printf '#!/bin/bash\n[ "$1" = run ] && { mkdir -p .next; echo id > .next/BUILD_ID; }\nexit 0\n' > "$T/bin/npm"
+  release_deploy main "$BASE/current" production "$(rel_rev)" >/dev/null
+  first="$(rel_live)"
+  echo two > "$T/work/two"; git -C "$T/work" add -A; git -C "$T/work" commit -qm two; git -C "$T/work" push -q origin HEAD:main
+  sleep 1
+  SMOKE_CODE=502 run release_deploy main "$BASE/current" production "$(rel_rev)"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ROLLED BACK"* ]]
+  [ "$(rel_live)" = "$first" ]
+}
+
+@test "releases: a failed build or a missing BUILD_ID never switches" {
+  rel_setup
+  printf '#!/bin/bash\n[ "$1" = run ] && { [ -n "$BUILD_FAIL" ] && exit 1; [ -n "$NO_BUILD_ID" ] || { mkdir -p .next; echo id > .next/BUILD_ID; }; }\nexit 0\n' > "$T/bin/npm"
+  BUILD_FAIL=1 run release_deploy main "$BASE/current" production "$(rel_rev)"
+  [ "$status" -ne 0 ]; [ ! -e "$BASE/current" ]
+  NO_BUILD_ID=1 run release_deploy main "$BASE/current" production "$(rel_rev)"
+  [ "$status" -ne 0 ]; [[ "$output" == *"no .next/BUILD_ID"* ]]; [ ! -e "$BASE/current" ]
+  ! grep -q 'systemctl restart' "$CALLS"
+}

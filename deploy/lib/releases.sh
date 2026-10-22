@@ -22,6 +22,14 @@
 #   declare -A LAYOUT=( [develop]=releases )        # default: inplace
 #   declare -A DEPLOY_DIR=( [develop]=/srv/staging.example.com/current … )
 #   KEEP_RELEASES=3
+#
+# Profile hooks (optional; the defaults are the WordPress behavior):
+#   profile_user <branch>               who owns secrets/writable state (default: pool_user)
+#   profile_finalize <rel> <branch>     after the build (default: drop node_modules + auth.json,
+#                                       root:root read-only)
+#   profile_check <rel>                 pre-switch check (default: WordPress loads)
+#   profile_smoke <branch> <cur> <env>  post-switch smoke test (default: smoke_test)
+#   profile_after <branch> <cur>        after a good deploy, warnings only (default: none)
 
 # <base> for a DEPLOY_DIR that must end in /current.
 release_base() {
@@ -87,28 +95,35 @@ release_deploy() {
   local fail="release left unswitched: $rel"
   git --git-dir="$BARE" archive "$rev" | tar -x -C "$rel" || { log "archive failed — $fail"; return 1; }
   release_link_shared "$rel" "$base" "$branch"           || { log "$fail"; return 1; }
-  # Shared secrets belong to this environment's pool user (see pool_user).
-  local user; user="$(pool_user "$branch")"
+  # Shared secrets belong to this environment's runtime user (pool user, or the profile's).
+  local user; user="$(release_user "$branch")"
   lock_secrets "$base/shared" "$user"
 
   # Build in the new release. If this fails the site has not changed at all.
-  profile_build "$rel"                                   || { log "build failed — $fail"; return 1; }
-  find "$rel" -name node_modules -type d -prune -exec rm -rf {} +   # build-time only
-  rm -f "$rel/auth.json"                                            # build-time only
+  profile_build "$rel" "$branch"                         || { log "build failed — $fail"; return 1; }
+  if declare -F profile_finalize >/dev/null; then
+    profile_finalize "$rel" "$branch"                    || { log "permissions failed — $fail"; return 1; }
+  else
+    find "$rel" -name node_modules -type d -prune -exec rm -rf {} +   # build-time only
+    rm -f "$rel/auth.json"                                            # build-time only
+    # Read-only to PHP: root owns the code; the world (incl. www-data) can only read.
+    chown -R root:root "$rel" && chmod -R u=rwX,go=rX "$rel" || { log "permissions failed — $fail"; return 1; }
+  fi
 
-  # Read-only to PHP: root owns the code; the world (incl. www-data) can only read.
-  chown -R root:root "$rel" && chmod -R u=rwX,go=rX "$rel" || { log "permissions failed — $fail"; return 1; }
-
-  # Does WordPress load from this tree at all? Catches a missing vendor/ or a fatal
-  # in mu-plugins before anything is switched.
-  wp --path="$rel/wp" --allow-root --skip-plugins --skip-themes eval 'echo "ok";' >/dev/null \
-    || { log "pre-switch check failed — release left unswitched: $rel"; return 1; }
+  # Does the app load from this tree at all? (WordPress: catches a missing vendor/ or a
+  # fatal in mu-plugins.) Before anything is switched.
+  if declare -F profile_check >/dev/null; then
+    profile_check "$rel" || { log "pre-switch check failed — release left unswitched: $rel"; return 1; }
+  else
+    wp --path="$rel/wp" --allow-root --skip-plugins --skip-themes eval 'echo "ok";' >/dev/null \
+      || { log "pre-switch check failed — release left unswitched: $rel"; return 1; }
+  fi
 
   release_switch "$base" "$rel"
   log "switched current -> $stamp"
   profile_activate "$branch" "$base/current"
 
-  if ! smoke_test "$base/current" "$env" "$user"; then
+  if ! release_smoke "$branch" "$base/current" "$env" "$user"; then
     if [ -n "$prev" ] && [ -d "$prev" ]; then
       release_switch "$base" "$prev"
       profile_activate "$branch" "$base/current"
@@ -118,6 +133,16 @@ release_deploy() {
   fi
 
   release_prune "$base" "$prev"
+  if declare -F profile_after >/dev/null; then profile_after "$branch" "$base/current" || log "post-deploy step failed (warning only)"; fi
+  return 0
+}
+
+release_user() {
+  if declare -F profile_user >/dev/null; then profile_user "$1"; else pool_user "$1"; fi
+}
+
+release_smoke() {  # release_smoke <branch> <current> <env> <user>
+  if declare -F profile_smoke >/dev/null; then profile_smoke "$1" "$2" "$3"; else smoke_test "$2" "$3" "$4"; fi
 }
 
 # Point current at the previous release (by name order) and activate it.

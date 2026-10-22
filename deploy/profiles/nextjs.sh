@@ -71,3 +71,53 @@ profile_deploy() {
     else bash "$dest/$post" "$base" || log "post-deploy failed (warning only)"; fi
   fi
 }
+
+# --- LAYOUT=releases (deploy/lib/releases.sh hooks) -----------------------------------
+# DEPLOY_DIR[b] = <base>/current; the unit's WorkingDirectory is that symlink, so a switch
+# plus a restart moves the app. shared/ holds .env.production (640 root:<APP_USER>).
+# The release is root-owned and read-only to the app except .next/, which Next writes at
+# runtime (regenerated ISR pages, the image cache). node_modules stays: `next start` needs it.
+
+profile_user() { conf_map APP_USER "$1"; }
+
+profile_shared_paths() { printf '%s\n' .env.production; }
+
+profile_build() {
+  local rel="$1" branch="$2" user
+  user="$(conf_map APP_USER "$branch")"
+  [ -n "$user" ] || { log "LAYOUT=releases for nextjs needs APP_USER[$branch]"; return 1; }
+  log "npm ci + build as $user…"
+  chown -R "$user:$user" "$rel"
+  runuser -u "$user" -- bash -c "cd '$rel' && npm ci --no-audit --no-fund && npm run build"
+}
+
+profile_finalize() {
+  local rel="$1" branch="$2" user
+  user="$(conf_map APP_USER "$branch")"
+  chown -R root:root "$rel" && chmod -R u=rwX,go=rX "$rel" || return 1
+  # a missing .next is profile_check's to report, with a clearer message
+  [ -d "$rel/.next" ] && chown -R "$user:$user" "$rel/.next"
+  return 0
+}
+
+profile_check() { [ -s "$1/.next/BUILD_ID" ] || { log "no .next/BUILD_ID — the build produced nothing"; return 1; }; }
+
+profile_activate() {
+  local unit; unit="$(conf_map SYSTEMD_UNIT "$1")"
+  [ -n "$unit" ] && { log "systemctl restart ${unit}"; systemctl restart "$unit"; }
+  return 0
+}
+
+profile_smoke() {
+  local port; port="$(conf_map PORT "$1")"
+  [ -n "$port" ] || { log "smoke: no PORT[$1], skipped"; return 0; }
+  nextjs_smoke "$port"
+}
+
+profile_after() {
+  local branch="$1" cur="$2" post user base
+  post="$(conf_map POST_DEPLOY "$branch")"; user="$(conf_map APP_USER "$branch")"; base="$(conf_map SITE_URL "$branch")"
+  [ -n "$post" ] && [ -f "$cur/$post" ] || return 0
+  log "post-deploy: $post ${base}"
+  runuser -u "$user" -- bash "$cur/$post" "$base"
+}

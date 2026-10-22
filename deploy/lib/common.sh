@@ -66,7 +66,7 @@ pool_user() {
 # the DB credentials or salts rather than merely read them.
 lock_secrets() {
   local f group="${2:-www-data}"
-  for f in "$1/wp-config-env.php" "$1/auth.json"; do
+  for f in "$1/wp-config-env.php" "$1/auth.json" "$1/.env.production"; do
     [ -f "$f" ] && chown "root:${group}" "$f" && chmod 640 "$f"
   done
   return 0
