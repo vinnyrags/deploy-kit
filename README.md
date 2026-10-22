@@ -79,6 +79,15 @@ a Next.js app — and standardizes how code gets from a GitHub push to a live se
    `sshd_config.d/10-deploy-kit.conf`, and `sshd -t` must pass or the old file returns.
    `audit.sh` adds `sec.admin` and `sec.x11`.
 
+   **Next.js without root (v1.16, opt-in).** `node.sh --major 24` installs system Node from
+   NodeSource's signed repo and lets unattended-upgrades patch it. `nextjs-service.sh <unit>
+   --user U --dir D --port P` writes a hardened systemd unit (only `D/.next` writable, no
+   `/home`, read-only system) and the no-login user. The `nextjs` profile takes per-branch
+   `APP_USER`, `SYSTEMD_UNIT`, `PORT`, `SITE_URL`, `POST_DEPLOY`: it builds as the app user,
+   locks `.env*` to `640 root:<user>`, stops before restarting if the build fails, and
+   smoke-tests `127.0.0.1:PORT`. `audit.sh` adds `os.noderoot`. Without `APP_USER`, the old
+   root build and `PM2_APP` still work.
+
 ## Consume it (per site)
 
 **GitHub side** — the site's `.github/workflows/deploy.yml`:

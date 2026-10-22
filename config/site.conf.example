@@ -59,14 +59,17 @@ declare -A CACHE_DIR=(
 # # declare -A CACHE_DIR=( [main]=/var/cache/nginx/... )
 
 # ============================================================================
-# EXAMPLE C — Next.js app (itzenzo.tv). DEPLOY_DIR is the app dir; restart via
-#             PM2 or systemd; OWNER is the app's run user.
+# EXAMPLE C — Next.js app (itzenzo.tv). DEPLOY_DIR is the app dir (in place). The app
+#             runs as APP_USER under a systemd unit from provision/nextjs-service.sh;
+#             the build runs as that user too. PORT drives the localhost smoke test.
 # ----------------------------------------------------------------------------
 # PROFILE=nextjs
-# OWNER=deploy:deploy
-# PM2_APP=itzenzo                 # or: SYSTEMD_UNIT=itzenzo.service
-# declare -A DEPLOY_DIR=(
-#   [main]=/var/www/itzenzo.tv/current
-#   [develop]=/var/www/itzenzo-staging/current
-# )
-# declare -A ENV_NAME=( [main]=production [develop]=staging )
+# declare -A DEPLOY_DIR=(   [main]=/var/www/itzenzo.tv  [develop]=/var/www/staging.itzenzo.tv )
+# declare -A ENV_NAME=(     [main]=production           [develop]=staging )
+# declare -A APP_USER=(     [main]=itzenzo              [develop]=itzenzo-stg )
+# declare -A SYSTEMD_UNIT=( [main]=itzenzo-tv.service   [develop]=itzenzo-tv-staging.service )
+# declare -A PORT=(         [main]=3001                 [develop]=3002 )
+# declare -A SITE_URL=(     [main]=https://itzenzo.tv   [develop]=https://staging.itzenzo.tv )
+# declare -A POST_DEPLOY=(  [main]=scripts/warm.sh      [develop]=scripts/warm.sh )
+# # Legacy: PM2_APP=itzenzo reloads a PM2 app instead (and without APP_USER the build runs as
+# # root, OWNER applies) — kept only so an un-migrated box still deploys.

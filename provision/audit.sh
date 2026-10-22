@@ -56,6 +56,14 @@ audit_security() {
     && emit PASS sec.x11 "SSH X11 forwarding off" || emit WARN sec.x11 "SSH X11 forwarding on (ssh-admin.sh --no-x11)"
 }
 
+# A Node.js app running as root turns any RCE in it into root on the box. Match the process
+# NAME (comm), never the command line: a pattern in args would match this check's own awk.
+audit_node_root() {
+  local n; n="$(ps -eo user=,comm= | awk '$1=="root" && ($2=="node" || $2 ~ /^next-server/)' | wc -l)"
+  [ "$n" -eq 0 ] && emit PASS os.noderoot "no Node.js process runs as root" \
+    || emit WARN os.noderoot "$n Node.js process(es) run as root — move the app to its own user (nextjs-service.sh)"
+}
+
 audit_backups() {
   local t svc res any=0
   # Template instances only show up in list-timers (list-unit-files lists the template).
@@ -112,7 +120,7 @@ results="$(
   audit_os_autoreboot; audit_os_reboot_pending; audit_os_journald; audit_os_failed_units; audit_os_php_cli
   audit_php_pool_users; site_secrets | audit_php_secrets
   audit_mail_conf; audit_mail_readers
-  audit_security; audit_ssh_admin; audit_backups
+  audit_security; audit_ssh_admin; audit_node_root; audit_backups
 )"
 
 printf '%s\n' "$results" | while IFS=$'\t' read -r s id msg; do
